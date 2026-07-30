@@ -164,6 +164,12 @@
             <span class="draft-status" id="draft-status">未修改</span>
           </div>
           <div class="workspace-actions">
+            <button class="icon-button" id="deep-audit-settings-button" type="button" aria-label="配置深度审查" title="配置深度审查">
+              <i data-lucide="settings-2"></i>
+            </button>
+            <button class="secondary-button" id="deep-audit-button" type="button">
+              <i data-lucide="shield-check"></i><span>深度审查</span>
+            </button>
             <button class="secondary-button" id="audit-draft-button" type="button">
               <i data-lucide="scan-search"></i><span>重新检查</span>
             </button>
@@ -231,6 +237,19 @@
               <strong id="creation-state">正在检查</strong>
             </section>
 
+            <section class="deep-result-section" id="deep-result-section" hidden>
+              <div class="review-heading">
+                <div>
+                  <span>云端深度审查</span>
+                  <h3 id="deep-result-verdict">等待审查</h3>
+                </div>
+                <span class="verdict-badge" id="deep-result-badge">未运行</span>
+              </div>
+              <p id="deep-result-summary"></p>
+              <div class="deep-result-meta" id="deep-result-meta"></div>
+              <div class="finding-list" id="deep-finding-list"></div>
+            </section>
+
             <section class="finding-section">
               <div class="review-section-title">
                 <span>发现与证据</span><strong id="finding-count">0</strong>
@@ -257,6 +276,71 @@
           </aside>
         </div>
       </div>
+    </dialog>
+
+    <dialog class="modal" id="deep-audit-settings-dialog">
+      <form class="modal-shell" id="deep-audit-settings-form">
+        <div class="modal-header">
+          <div>
+            <span class="modal-kicker">云端模型</span>
+            <h2>深度审查配置</h2>
+          </div>
+          <button class="icon-button compact" id="close-deep-audit-settings" type="button" aria-label="关闭" title="关闭">
+            <i data-lucide="x"></i>
+          </button>
+        </div>
+        <div class="form-grid provider-form-grid">
+          <label class="full">
+            <span>OpenAI-compatible API Base URL</span>
+            <input id="deep-audit-endpoint" type="url" placeholder="https://api.openai.com/v1" autocomplete="url" required />
+          </label>
+          <label class="full">
+            <span>模型</span>
+            <input id="deep-audit-model" type="text" placeholder="模型名称" autocomplete="off" required />
+          </label>
+          <label class="full">
+            <span>API key</span>
+            <input id="deep-audit-api-key" type="password" autocomplete="new-password" />
+          </label>
+        </div>
+        <p class="credential-state" id="deep-audit-credential-state"></p>
+        <div class="modal-footer split-footer">
+          <button class="secondary-button destructive-text" id="clear-deep-audit-settings" type="button">移除配置</button>
+          <span></span>
+          <button class="secondary-button" id="cancel-deep-audit-settings" type="button">取消</button>
+          <button class="primary-button" id="save-deep-audit-settings" type="submit">存储到 Keychain</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="modal deep-consent-dialog" id="deep-audit-consent-dialog">
+      <form class="modal-shell" id="deep-audit-consent-form">
+        <div class="modal-header">
+          <div>
+            <span class="modal-kicker">发送前确认</span>
+            <h2>选择离开本机的文件</h2>
+          </div>
+          <button class="icon-button compact" id="close-deep-audit-consent" type="button" aria-label="关闭" title="关闭">
+            <i data-lucide="x"></i>
+          </button>
+        </div>
+        <dl class="provider-summary">
+          <div><dt>API 地址</dt><dd id="deep-consent-endpoint"></dd></div>
+          <div><dt>模型</dt><dd id="deep-consent-model"></dd></div>
+          <div><dt>请求</dt><dd id="deep-consent-requests"></dd></div>
+        </dl>
+        <div class="consent-file-list" id="deep-consent-files"></div>
+        <details class="skipped-files" id="deep-skipped-files" hidden>
+          <summary id="deep-skipped-summary">未上传文件</summary>
+          <div id="deep-skipped-list"></div>
+        </details>
+        <div class="modal-footer">
+          <button class="secondary-button" id="cancel-deep-audit-consent" type="button">取消</button>
+          <button class="primary-button" id="run-deep-audit" type="submit">
+            <i data-lucide="cloud-upload"></i><span>确认发送并审查</span>
+          </button>
+        </div>
+      </form>
     </dialog>
 
     <dialog class="modal compact-modal" id="confirm-dialog">

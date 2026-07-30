@@ -16,7 +16,10 @@ path = "src/main.rs"
 [dependencies]
 base64 = "0.22"
 chrono = { version = "0.4", features = ["serde"] }
+keyring = { version = "3", default-features = false, features = ["apple-native"] }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 serde_yaml = "0.9"
 sha2 = "0.10"
 tauri = { version = "2.11.0", features = [] }

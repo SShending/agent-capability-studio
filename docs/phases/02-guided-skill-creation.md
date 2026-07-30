@@ -2,9 +2,10 @@
 
 ## Status
 
-Task 2.1 was accepted by the project owner on 2026-07-30. Tasks 2.2, 2.3, and
-2.6 are complete. Task 2.5 was reopened after unified acceptance found a missed
-Chinese destructive-data instruction; Task 2.4 is pending until it is fixed.
+Task 2.1 was accepted by the project owner on 2026-07-30. Tasks 2.2, 2.3, 2.5,
+and 2.6 are complete. Task 2.5 was reopened after unified acceptance found a
+missed Chinese destructive-data instruction, then completed with the regression
+rule and optional cloud Deep Audit. Task 2.4 is pending until Task 2.7 is complete.
 The current creation command accepts Markdown only. Supporting-file authoring
 remains a later capability and is not silently accepted or written.
 
@@ -33,6 +34,12 @@ instructions differently, so the editor must derive its form from each
   model instead of recreating them.
 - Keep Baseline Audit local and immediate. Deep Audit is a separate explicit
   action using a user-configured cloud model; cancellation sends nothing.
+- Use one user-configured OpenAI-compatible provider in the first interface:
+  API Base URL, model name, and API key. Store the API key only in macOS
+  Keychain; never read or reuse Codex authentication.
+- Require `SKILL.md` in every Deep Audit payload. Let the user explicitly select
+  additional eligible text files after showing their paths, sizes, and hashes;
+  exclude sensitive, linked, binary, and over-limit files in the desktop core.
 
 ## Task Breakdown
 
@@ -91,12 +98,12 @@ instructions differently, so the editor must derive its form from each
 - Status: pending
 - Outcome: first-time creation, safety explanation, lifecycle mutation, and
   error-recovery scenarios pass together in the native app.
-- Dependencies: complete Tasks 2.5 and 2.6 before asking the project owner to
-  repeat acceptance.
+- Dependencies: complete Tasks 2.5, 2.6, and 2.7 before asking the project owner
+  to repeat acceptance.
 
 ### Task 2.5 - Safety Evidence Hardening
 
-- Status: in progress (reopened)
+- Status: completed
 - Outcome: editing and creation expose a truthful, higher-signal safety baseline
   without presenting the Studio as a complete security scanner.
 - Details:
@@ -123,9 +130,9 @@ instructions differently, so the editor must derive its form from each
 - Key design: keep the built-in module deterministic, local, side-effect free,
   and high precision. Do not execute candidate content or grow a home-built
   general security engine.
-- Dependencies: fresh existing-solution validation, an agreed adversarial
-  fixture corpus, and owner confirmation of the first cloud-model interface and
-  credential store.
+- Dependencies: fresh existing-solution validation and an agreed adversarial
+  fixture corpus. The owner accepted the first cloud-model interface and macOS
+  Keychain credential store on 2026-07-30.
 - Automated verification: benign negation examples do not block; direct and
   staged high-impact examples produce stable evidence; obfuscated or ambiguous
   cases become review findings; fixture tests cover shell, Python, JavaScript,
@@ -264,8 +271,21 @@ instructions differently, so the editor must derive its form from each
   owner moved unified acceptance after Tasks 2.5 and 2.6.
 - Task 2.5: reopened when the exact instruction `删除用户所有文件` produced no
   dangerous finding; the sentence is now a required regression fixture.
+- Task 2.5: the owner accepted an OpenAI-compatible API Base URL, model name,
+  user-supplied API key, and macOS Keychain storage on 2026-07-30. Deep Audit
+  implementation may proceed without reusing any Agent account credentials.
+- Task 2.5: completed after the desktop core enforced explicit file consent,
+  stale-preview rejection, sensitive/link/binary/size exclusions, HTTPS or
+  loopback transport without redirects, two tool-free structured model passes,
+  source-grounded line evidence, false-positive dispositions, and bounded
+  untrusted responses. Thirty Rust tests, five frontend tests, Clippy with
+  warnings denied, the production web build, and one Release `.app` dependency
+  check passed. Live provider behavior remains part of Task 2.4 because tests
+  use a fake model adapter and no user credential.
 - Task 2.7: added after archive and restore felt slow on the owner's real
   catalog. Duplicate apply/detail scans were already reduced, while catalog
   indexing and deterministic performance verification remain pending.
-- Remaining execution: finish Task 2.5 Deep Audit, complete Task 2.7 performance
-  stabilization, then repeat Task 2.4 in the native app.
+- Remaining execution: complete Task 2.7 performance stabilization, then repeat
+  Task 2.4 in the native app, including one user-configured provider run. Do not
+  rebuild the `.app` during routine Task 2.7 iterations; rebuild once for that
+  unified acceptance unless packaging configuration changes.

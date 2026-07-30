@@ -386,5 +386,11 @@ fn finding(
         explanation: explanation.into(),
         evidence,
         confidence: confidence.into(),
+        source: "baseline".into(),
+        file_path: Some("SKILL.md".into()),
+        line_start: None,
+        line_end: None,
+        disposition: "confirmed".into(),
+        review_note: None,
     }
 }

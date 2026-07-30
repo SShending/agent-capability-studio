@@ -17,6 +17,8 @@ const state = {
   detail: null,
   editor: null,
   auditSequence: 0,
+  deepAuditSettings: null,
+  deepAuditPreview: null,
   confirmAction: null,
   confirmRequiredName: null,
   toastTimer: null
@@ -57,6 +59,8 @@ const elements = {
   draftBodyFallback: document.querySelector("#draft-body-fallback"),
   draftSource: document.querySelector("#draft-source"),
   auditDraft: document.querySelector("#audit-draft-button"),
+  deepAudit: document.querySelector("#deep-audit-button"),
+  deepAuditSettingsButton: document.querySelector("#deep-audit-settings-button"),
   saveDraft: document.querySelector("#save-draft-button"),
   auditVerdict: document.querySelector("#audit-verdict"),
   auditVerdictBadge: document.querySelector("#audit-verdict-badge"),
@@ -71,6 +75,30 @@ const elements = {
   creationPreview: document.querySelector("#creation-preview"),
   creationDestination: document.querySelector("#creation-destination"),
   creationState: document.querySelector("#creation-state"),
+  deepResultSection: document.querySelector("#deep-result-section"),
+  deepResultVerdict: document.querySelector("#deep-result-verdict"),
+  deepResultBadge: document.querySelector("#deep-result-badge"),
+  deepResultSummary: document.querySelector("#deep-result-summary"),
+  deepResultMeta: document.querySelector("#deep-result-meta"),
+  deepFindingList: document.querySelector("#deep-finding-list"),
+  deepSettingsDialog: document.querySelector("#deep-audit-settings-dialog"),
+  deepSettingsForm: document.querySelector("#deep-audit-settings-form"),
+  deepEndpoint: document.querySelector("#deep-audit-endpoint"),
+  deepModel: document.querySelector("#deep-audit-model"),
+  deepApiKey: document.querySelector("#deep-audit-api-key"),
+  deepCredentialState: document.querySelector("#deep-audit-credential-state"),
+  clearDeepSettings: document.querySelector("#clear-deep-audit-settings"),
+  saveDeepSettings: document.querySelector("#save-deep-audit-settings"),
+  deepConsentDialog: document.querySelector("#deep-audit-consent-dialog"),
+  deepConsentForm: document.querySelector("#deep-audit-consent-form"),
+  deepConsentEndpoint: document.querySelector("#deep-consent-endpoint"),
+  deepConsentModel: document.querySelector("#deep-consent-model"),
+  deepConsentRequests: document.querySelector("#deep-consent-requests"),
+  deepConsentFiles: document.querySelector("#deep-consent-files"),
+  deepSkippedFiles: document.querySelector("#deep-skipped-files"),
+  deepSkippedSummary: document.querySelector("#deep-skipped-summary"),
+  deepSkippedList: document.querySelector("#deep-skipped-list"),
+  runDeepAudit: document.querySelector("#run-deep-audit"),
   toast: document.querySelector("#toast"),
   toastMessage: document.querySelector("#toast-message")
 };
@@ -444,6 +472,8 @@ function setDraftMarkdown(markdown, { syncSource = true } = {}) {
   if (syncSource) elements.draftSource.value = markdown;
   state.editor.audit = null;
   state.editor.preview = null;
+  state.deepAuditPreview = null;
+  renderDeepAuditResult(null);
   renderCreationPreview(null);
   updateEditorStatus();
   scheduleDraftAudit();
@@ -490,7 +520,7 @@ function renderAuditError(message) {
 
 function renderFinding(item) {
   const row = document.createElement("article");
-  row.className = `finding-row ${item.severity}`;
+  row.className = `finding-row ${item.severity}${item.disposition === "dismissed" ? " is-dismissed" : ""}`;
 
   const heading = document.createElement("div");
   heading.className = "finding-heading";
@@ -500,7 +530,9 @@ function renderFinding(item) {
   title.textContent = item.title;
   const confidence = document.createElement("span");
   confidence.className = "confidence-label";
-  confidence.textContent = { high: "高置信", medium: "中置信", low: "低置信" }[item.confidence] || item.confidence;
+  confidence.textContent = item.disposition === "dismissed"
+    ? "复核后排除"
+    : { high: "高置信", medium: "中置信", low: "低置信" }[item.confidence] || item.confidence;
   heading.append(marker, title, confidence);
 
   const explanation = document.createElement("p");
@@ -511,8 +543,177 @@ function renderFinding(item) {
   const evidenceText = document.createElement("p");
   evidenceText.textContent = item.evidence;
   evidence.append(summary, evidenceText);
-  row.append(heading, explanation, evidence);
+  row.append(heading, explanation);
+  if (item.filePath) {
+    const location = document.createElement("code");
+    location.className = "finding-location";
+    const lines = item.lineStart
+      ? `:${item.lineStart}${item.lineEnd && item.lineEnd !== item.lineStart ? `-${item.lineEnd}` : ""}`
+      : "";
+    location.textContent = `${item.filePath}${lines}`;
+    row.append(location);
+  }
+  row.append(evidence);
+  if (item.reviewNote) {
+    const review = document.createElement("p");
+    review.className = "review-note";
+    review.textContent = `误报复核：${item.reviewNote}`;
+    row.append(review);
+  }
   return row;
+}
+
+function renderDeepAuditResult(result) {
+  if (state.editor) state.editor.deepAudit = result;
+  elements.deepResultSection.hidden = !result;
+  if (!result) {
+    elements.deepFindingList.replaceChildren();
+    return;
+  }
+  const confirmed = result.findings.filter((finding) => finding.disposition !== "dismissed");
+  const dismissed = result.findings.length - confirmed.length;
+  const verdicts = {
+    clear: ["未发现经复核的语义风险", "未命中", "这次云端审查没有保留风险项；不代表 Skill 安全。"],
+    review: ["发现需要人工复核的行为", "需复核", "请根据文件证据判断这些能力是否符合预期。"],
+    block: ["发现高影响语义风险", "高风险", "模型审查保留了高影响风险项，请先修改或人工确认来源。"]
+  };
+  const [title, badge, summary] = verdicts[result.verdict] || verdicts.review;
+  elements.deepResultVerdict.textContent = title;
+  elements.deepResultBadge.textContent = badge;
+  elements.deepResultBadge.className = `verdict-badge is-${result.verdict}`;
+  elements.deepResultSummary.textContent = summary;
+  elements.deepResultMeta.textContent = `${result.model} · ${result.files.length} 个文件 · 2 次请求${dismissed ? ` · 排除 ${dismissed} 项` : ""}`;
+  elements.deepFindingList.replaceChildren(...result.findings.map(renderFinding));
+  refreshIcons();
+}
+
+function formatBytes(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  return `${(bytes / 1024).toFixed(bytes < 10240 ? 1 : 0)} KB`;
+}
+
+async function openDeepAuditSettings() {
+  try {
+    const settings = await desktop.getDeepAuditSettings();
+    state.deepAuditSettings = settings;
+    elements.deepEndpoint.value = settings.endpoint;
+    elements.deepModel.value = settings.model;
+    elements.deepApiKey.value = "";
+    elements.deepApiKey.placeholder = settings.hasApiKey ? "已存储；留空可继续使用" : "输入 API key";
+    elements.deepCredentialState.textContent = settings.hasApiKey
+      ? "API key 已存储在 macOS Keychain。"
+      : "尚未存储 API key。";
+    elements.clearDeepSettings.disabled = !settings.hasApiKey && !settings.endpoint && !settings.model;
+    elements.deepSettingsDialog.showModal();
+    refreshIcons();
+  } catch (error) {
+    showToast(error.message, true);
+  }
+}
+
+async function saveDeepAuditSettings(event) {
+  event.preventDefault();
+  elements.saveDeepSettings.disabled = true;
+  try {
+    const apiKey = elements.deepApiKey.value.trim() || null;
+    const settings = await desktop.saveDeepAuditSettings(
+      elements.deepEndpoint.value,
+      elements.deepModel.value,
+      apiKey
+    );
+    state.deepAuditSettings = settings;
+    elements.deepSettingsDialog.close();
+    showToast("深度审查配置已更新。API key 保存在 Keychain。");
+  } catch (error) {
+    showToast(error.message, true);
+  } finally {
+    elements.saveDeepSettings.disabled = false;
+  }
+}
+
+function deepAuditEditorId() {
+  return state.editor?.isNew ? null : state.editor?.id || null;
+}
+
+function renderDeepAuditConsent(preview) {
+  elements.deepConsentEndpoint.textContent = preview.endpoint;
+  elements.deepConsentModel.textContent = preview.model;
+  elements.deepConsentRequests.textContent = `${preview.requestCount} 次（威胁判断 + 误报复核）`;
+  const fileRows = preview.files.map((file) => {
+    const label = document.createElement("label");
+    label.className = "consent-file-row";
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.value = file.path;
+    checkbox.checked = true;
+    checkbox.disabled = file.required;
+    const copy = document.createElement("span");
+    const path = document.createElement("strong");
+    path.textContent = file.path;
+    const metadata = document.createElement("small");
+    metadata.textContent = `${formatBytes(file.size)} · SHA-256 ${file.sha256.slice(0, 12)}…${file.required ? " · 必选" : ""}`;
+    copy.append(path, metadata);
+    label.append(checkbox, copy);
+    return label;
+  });
+  elements.deepConsentFiles.replaceChildren(...fileRows);
+  elements.deepSkippedFiles.hidden = preview.skippedFiles.length === 0;
+  elements.deepSkippedSummary.textContent = `${preview.skippedFiles.length} 个文件不会上传`;
+  elements.deepSkippedList.replaceChildren(...preview.skippedFiles.map((file) => {
+    const row = document.createElement("p");
+    row.textContent = `${file.path} · ${file.reason}`;
+    return row;
+  }));
+}
+
+async function requestDeepAudit() {
+  if (!state.editor) return;
+  elements.deepAudit.disabled = true;
+  try {
+    const settings = await desktop.getDeepAuditSettings();
+    state.deepAuditSettings = settings;
+    if (!settings.hasApiKey || !settings.endpoint || !settings.model) {
+      await openDeepAuditSettings();
+      return;
+    }
+    const preview = await desktop.previewDeepAudit(deepAuditEditorId(), state.editor.draftMarkdown);
+    state.deepAuditPreview = preview;
+    renderDeepAuditConsent(preview);
+    elements.deepConsentDialog.showModal();
+    refreshIcons();
+  } catch (error) {
+    showToast(error.message, true);
+  } finally {
+    elements.deepAudit.disabled = false;
+  }
+}
+
+async function performDeepAudit(event) {
+  event.preventDefault();
+  if (!state.editor || !state.deepAuditPreview) return;
+  const selectedPaths = [...elements.deepConsentFiles.querySelectorAll("input")]
+    .filter((input) => input.checked)
+    .map((input) => input.value);
+  elements.runDeepAudit.disabled = true;
+  elements.runDeepAudit.querySelector("span").textContent = "正在审查";
+  try {
+    const result = await desktop.runDeepAudit(
+      deepAuditEditorId(),
+      state.editor.draftMarkdown,
+      selectedPaths,
+      state.deepAuditPreview.candidateHash
+    );
+    elements.deepConsentDialog.close();
+    renderDeepAuditResult(result);
+    showToast("深度审查完成。");
+  } catch (error) {
+    elements.deepConsentDialog.close();
+    showToast(error.message, true);
+  } finally {
+    elements.runDeepAudit.disabled = false;
+    elements.runDeepAudit.querySelector("span").textContent = "确认发送并审查";
+    state.deepAuditPreview = null;
+  }
 }
 
 function renderDraftAudit(audit) {
@@ -603,6 +804,8 @@ async function openEditor(id) {
     auditTimer: null,
     isNew: false
   };
+  state.deepAuditPreview = null;
+  renderDeepAuditResult(null);
   elements.editorTitle.textContent = detail.displayName;
   elements.draftSource.value = detail.markdown;
   syncGuidedFields();
@@ -629,6 +832,8 @@ async function openNewSkill() {
     auditTimer: null,
     isNew: true
   };
+  state.deepAuditPreview = null;
+  renderDeepAuditResult(null);
   elements.editorTitle.textContent = "新建 Skill";
   elements.saveDraft.innerHTML = '<i data-lucide="plus"></i><span>创建 Skill</span>';
   elements.draftSource.value = markdown;
@@ -686,20 +891,24 @@ function requestDraftSave() {
     if (!state.editor.preview?.canCreate) return;
     presentConfirmation({
       title: "创建新 Skill",
-      message: `将在 ${state.editor.preview.destination} 创建 SKILL.md。`,
+      message: state.editor.deepAudit?.verdict === "block"
+        ? `云端深度审查保留了高影响风险项。阅读证据后，仍将在 ${state.editor.preview.destination} 创建 SKILL.md。`
+        : `将在 ${state.editor.preview.destination} 创建 SKILL.md。`,
       label: "确认创建",
       action: performDraftCreate,
       tone: "primary"
     });
     return;
   }
-  if (state.editor.audit.verdict === "clear") {
+  if (state.editor.audit.verdict === "clear" && !["review", "block"].includes(state.editor.deepAudit?.verdict)) {
     performDraftSave();
     return;
   }
   presentConfirmation({
     title: "保存需要复核的草稿",
-    message: "检查发现了需要人工复核的行为。确认这些行为符合预期后再保存。",
+    message: state.editor.deepAudit?.verdict === "block"
+      ? "云端深度审查保留了高影响风险项。阅读证据并确认行为符合预期后再保存。"
+      : "检查发现了需要人工复核的行为。确认这些行为符合预期后再保存。",
     label: "确认保存",
     action: performDraftSave
   });
@@ -765,7 +974,13 @@ async function requestSkillLifecycle(action, skill) {
 
 function showToast(message, isError = false) {
   clearTimeout(state.toastTimer);
-  const toastHost = elements.editorDialog.open ? elements.editorDialog : document.body;
+  const toastHost = elements.deepConsentDialog.open
+      ? elements.deepConsentDialog
+      : elements.deepSettingsDialog.open
+        ? elements.deepSettingsDialog
+        : elements.editorDialog.open
+          ? elements.editorDialog
+          : document.body;
   if (elements.toast.parentElement !== toastHost) toastHost.append(elements.toast);
   elements.toast.classList.toggle("is-error", isError);
   elements.toastMessage.textContent = message;
@@ -834,6 +1049,32 @@ elements.closeEditor.addEventListener("click", requestCloseEditor);
 elements.guidedMode.addEventListener("click", () => setEditorMode("guided"));
 elements.sourceMode.addEventListener("click", () => setEditorMode("source"));
 elements.auditDraft.addEventListener("click", runDraftAudit);
+elements.deepAudit.addEventListener("click", requestDeepAudit);
+elements.deepAuditSettingsButton.addEventListener("click", openDeepAuditSettings);
+elements.deepSettingsForm.addEventListener("submit", saveDeepAuditSettings);
+elements.deepConsentForm.addEventListener("submit", performDeepAudit);
+document.querySelector("#close-deep-audit-settings").addEventListener("click", () => elements.deepSettingsDialog.close());
+document.querySelector("#cancel-deep-audit-settings").addEventListener("click", () => elements.deepSettingsDialog.close());
+document.querySelector("#close-deep-audit-consent").addEventListener("click", () => {
+  state.deepAuditPreview = null;
+  elements.deepConsentDialog.close();
+});
+document.querySelector("#cancel-deep-audit-consent").addEventListener("click", () => {
+  state.deepAuditPreview = null;
+  elements.deepConsentDialog.close();
+});
+elements.clearDeepSettings.addEventListener("click", () => {
+  presentConfirmation({
+    title: "移除深度审查配置",
+    message: "将删除已保存的服务地址、模型名称和 Keychain 中的 API key。",
+    label: "确认移除",
+    action: async () => {
+      state.deepAuditSettings = await desktop.clearDeepAuditSettings();
+      elements.deepSettingsDialog.close();
+      showToast("深度审查配置已移除。");
+    }
+  });
+});
 elements.saveDraft.addEventListener("click", requestDraftSave);
 elements.editorDialog.addEventListener("cancel", (event) => {
   event.preventDefault();

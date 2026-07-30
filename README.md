@@ -28,6 +28,9 @@ The shipped application does not start a Node HTTP server or require Node.js.
   sensitive-data signals, command execution, persistence, dependency installs,
   encoded payloads, and exact changes before saving.
 - Require explicit confirmation before saving findings that need manual review.
+- Optionally run a two-pass semantic Deep Audit through a user-configured
+  OpenAI-compatible provider after confirming the exact files that will leave
+  the machine; store its API key in macOS Keychain.
 - Prevent stale drafts from overwriting a Skill changed elsewhere.
 - Disable, re-enable, archive, and restore personal Skills without overwriting
   destination directories.
@@ -35,7 +38,9 @@ The shipped application does not start a Node HTTP server or require Node.js.
 - Keep system and plugin-managed Skills read-only.
 
 Audit results are evidence-based findings, not a security certificate or an
-absolute safety guarantee.
+absolute safety guarantee. Baseline Audit stays offline. Deep Audit sends the
+confirmed files to the configured provider twice: threat review and independent
+false-positive review.
 
 ## Product boundary
 

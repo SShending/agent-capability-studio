@@ -3,9 +3,10 @@
 ## Current Position
 
 - Active phase: Phase 2 implementation
-- In-progress task: 2.5 Harden built-in safety evidence and validate scanner integration options
+- In-progress task: 2.7 Eliminate lifecycle catalog rescans and verify responsive transitions
 - Last accepted milestone: Phase 1 native desktop vertical slice
-- Blocking decision: confirm the first cloud-model interface and credential store
+- Blocking decision: none; the first cloud-model interface and credential store
+  were accepted on 2026-07-30
 - Validation item: confirm the final minimum macOS version before public release
 
 ## Phase 1 - Native Desktop Vertical Slice
@@ -67,8 +68,8 @@ Tasks:
 - [x] 2.1 Define the Skill Draft document model and heading-aware form flow.
 - [x] 2.2 Implement safe Rust creation commands and collision handling.
 - [x] 2.3 Add draft preview, audit, confirmation, and post-create navigation.
-- [ ] 2.4 Run unified creation, safety, lifecycle, and recovery acceptance after Tasks 2.5 and 2.6.
-- [ ] 2.5 Harden built-in safety evidence and validate scanner integration options. (reopened after acceptance finding)
+- [ ] 2.4 Run unified creation, safety, lifecycle, and recovery acceptance after Tasks 2.5, 2.6, and 2.7.
+- [x] 2.5 Harden built-in safety evidence and validate scanner integration options.
 - [x] 2.6 Implement guarded personal Skill lifecycle actions.
 - [ ] 2.7 Eliminate lifecycle catalog rescans and verify responsive transitions.
 

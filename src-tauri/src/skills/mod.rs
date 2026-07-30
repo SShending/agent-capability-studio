@@ -1,6 +1,10 @@
 mod audit;
+mod deep_audit;
 mod lifecycle;
 
+pub use deep_audit::{
+    DeepAuditError, DeepAuditManager, DeepAuditPreview, DeepAuditResult, DeepAuditSettings,
+};
 pub use lifecycle::{DeleteSkillResult, LifecyclePreview, LifecycleResult};
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
@@ -189,6 +193,12 @@ pub struct Finding {
     pub explanation: String,
     pub evidence: String,
     pub confidence: String,
+    pub source: String,
+    pub file_path: Option<String>,
+    pub line_start: Option<usize>,
+    pub line_end: Option<usize>,
+    pub disposition: String,
+    pub review_note: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -864,6 +874,12 @@ fn finding(
         explanation: explanation.into(),
         evidence,
         confidence: confidence.into(),
+        source: "baseline".into(),
+        file_path: Some("SKILL.md".into()),
+        line_start: None,
+        line_end: None,
+        disposition: "confirmed".into(),
+        review_note: None,
     }
 }
 
