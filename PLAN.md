@@ -48,6 +48,9 @@ Acceptance:
 
 - The flow captures purpose, trigger strategy, workflow, and supporting files.
 - The draft is audited and previewed before creation.
+- Audit wording distinguishes a limited baseline check from a security
+  guarantee, and high-confidence blockers are verified against adversarial and
+  benign fixtures.
 - Name/path collisions, invalid files, and concurrent changes are handled without
   overwriting existing Skills.
 - The created Skill is immediately discoverable and editable.
@@ -58,6 +61,7 @@ Tasks:
 - [x] 2.2 Implement safe Rust creation commands and collision handling.
 - [x] 2.3 Add draft preview, audit, confirmation, and post-create navigation.
 - [ ] 2.4 Verify with first-time and error-recovery usability scenarios. (in progress)
+- [ ] 2.5 Harden built-in safety evidence and validate scanner integration options.
 
 ## Phase 3 - GitHub And Local Candidate Audit
 

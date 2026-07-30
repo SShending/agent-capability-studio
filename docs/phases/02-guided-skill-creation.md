@@ -23,6 +23,12 @@ instructions differently, so the editor must derive its form from each
 - Keep source mode as the complete fallback for unsupported or unusual Markdown.
 - Defer adding, deleting, and reordering section subtrees until the creation
   contract is defined, so editing and creation share one mutation model.
+- Treat the current substring rules as a fast baseline, not a security scanner.
+  High-confidence deterministic checks may block; ambiguous capability signals
+  should request review and show exact evidence.
+- Revalidate maintained Skill scanners before extending detection. Keep mature
+  scanning engines external and map their results into the Studio evidence
+  model instead of recreating them.
 
 ## Task Breakdown
 
@@ -81,6 +87,39 @@ instructions differently, so the editor must derive its form from each
 - Status: pending
 - Outcome: first-time and error-recovery scenarios pass in the native app.
 
+### Task 2.5 - Safety Evidence Hardening
+
+- Status: pending
+- Outcome: editing and creation expose a truthful, higher-signal safety baseline
+  without presenting the Studio as a complete security scanner.
+- Details:
+  - recheck current maintained Skill and Agent scanners, including Cisco AI
+    Defense Skill Scanner and Snyk Agent Scan, against the Studio's local,
+    non-programmer workflow;
+  - define a capability inventory for command execution, filesystem mutation,
+    sensitive-data access, network transfer, dependency installation,
+    persistence, and indirect or staged execution;
+  - separate structural blockers, high-confidence dangerous behavior, and
+    ambiguous review findings, each with exact evidence and confidence;
+  - replace "clear" language with wording that states the limits of the built-in
+    checks;
+  - preserve the shared finding/evidence/severity/confidence/verdict model so
+    Phase 3 external scanner adapters can reuse the same interface.
+- Affected files: the Rust audit module and fixtures, frontend finding and
+  verdict presentation, scanner research notes, and plan/limitation docs.
+- Key design: keep the built-in module deterministic, local, side-effect free,
+  and high precision. Do not execute candidate content or grow a home-built
+  general security engine.
+- Dependencies: fresh existing-solution validation and an agreed adversarial
+  fixture corpus before expanding blocker rules.
+- Automated verification: benign negation examples do not block; direct and
+  staged high-impact examples produce stable evidence; obfuscated or ambiguous
+  cases become review findings; fixture tests cover shell, Python, JavaScript,
+  network, credential, persistence, and destructive filesystem behavior.
+- Human verification: a non-programmer can distinguish “no known baseline issue”
+  from “safe”, understand why a finding fired, and identify what requires manual
+  judgment or an external scanner.
+
 ## Risks And Mitigations
 
 - Markdown normalization: patch source ranges instead of serializing the full
@@ -88,6 +127,11 @@ instructions differently, so the editor must derive its form from each
 - Unsupported syntax: preserve it in section content and keep source mode.
 - Deep outlines: indent visually with a cap so text width remains usable.
 - Parser growth: expose only the product-level document interface to the app.
+- False assurance: never display a clean baseline as a safety certification.
+- Scanner duplication: research and integrate maintained engines; limit built-in
+  checks to deterministic structure and high-signal evidence.
+- False positives: require benign, negated, and explanatory fixtures before a
+  rule can become a blocker.
 
 ## Acceptance Record
 
@@ -101,4 +145,7 @@ instructions differently, so the editor must derive its form from each
   for a new Markdown draft, previews its destination and conflicts, requires an
   explicit confirmation, then refreshes and opens the created Skill. Frontend,
   Rust, and production-build checks passed; Tauri development window launched.
-- Remaining Phase 2 task: 2.4 human usability and recovery verification.
+- Task 2.5: added by the project owner after reviewing the current baseline and
+  finding its blocker coverage too weak for the intended safety experience.
+- Remaining Phase 2 tasks: 2.4 usability/recovery verification and 2.5 safety
+  evidence hardening.
