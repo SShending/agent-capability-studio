@@ -1,5 +1,6 @@
 import { createIcons, icons } from "lucide";
 import { desktop } from "./desktop-bridge.js";
+import { parseSkillDocument, updateSkillDocument } from "./skill-document.js";
 
 window.lucide = {
   createIcons: (options = {}) => createIcons({ icons, ...options })
@@ -50,7 +51,10 @@ const elements = {
   sourceEditor: document.querySelector("#source-editor"),
   draftName: document.querySelector("#draft-name"),
   draftDescription: document.querySelector("#draft-description"),
-  draftBody: document.querySelector("#draft-body"),
+  draftSections: document.querySelector("#draft-sections"),
+  draftSectionCount: document.querySelector("#draft-section-count"),
+  draftBodyFallbackField: document.querySelector("#draft-body-fallback-field"),
+  draftBodyFallback: document.querySelector("#draft-body-fallback"),
   draftSource: document.querySelector("#draft-source"),
   auditDraft: document.querySelector("#audit-draft-button"),
   saveDraft: document.querySelector("#save-draft-button"),
@@ -108,59 +112,6 @@ function formatDate(value) {
     month: "short",
     day: "numeric"
   }).format(new Date(value));
-}
-
-function parseDraftDocument(markdown) {
-  const match = markdown.match(/^---\s*\r?\n([\s\S]*?)\r?\n---(?:\s*\r?\n|\s*$)/);
-  if (!match) return { name: "", description: "", body: markdown };
-  const values = {};
-  const lines = match[1].split(/\r?\n/);
-  for (let index = 0; index < lines.length; index += 1) {
-    const keyMatch = lines[index].match(/^([A-Za-z0-9_-]+):(?:\s*(.*))?$/);
-    if (!keyMatch) continue;
-    const [, key, rawValue = ""] = keyMatch;
-    if (/^[>|][+-]?$/.test(rawValue.trim())) {
-      const folded = [];
-      while (index + 1 < lines.length && /^\s+/.test(lines[index + 1])) {
-        index += 1;
-        folded.push(lines[index].trim());
-      }
-      values[key] = rawValue.startsWith(">") ? folded.join(" ") : folded.join("\n");
-    } else {
-      values[key] = rawValue.trim().replace(/^(['"])([\s\S]*)\1$/, "$2");
-    }
-  }
-  return {
-    name: values.name || "",
-    description: values.description || "",
-    body: markdown.slice(match[0].length).replace(/^\s+/, "")
-  };
-}
-
-function updateDescription(markdown, description) {
-  const match = markdown.match(/^---\s*\r?\n([\s\S]*?)\r?\n---/);
-  if (!match) return markdown;
-  const lines = match[1].split(/\r?\n/);
-  const start = lines.findIndex((line) => /^description:/.test(line));
-  let end = start;
-  if (start >= 0) {
-    while (end + 1 < lines.length && /^\s+/.test(lines[end + 1])) end += 1;
-  }
-  const normalized = description
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-  const replacement = ["description: >-", ...(normalized.length ? normalized : [""]).map((line) => `  ${line}`)];
-  if (start >= 0) lines.splice(start, end - start + 1, ...replacement);
-  else lines.push(...replacement);
-  return `---\n${lines.join("\n")}\n---${markdown.slice(match[0].length)}`;
-}
-
-function updateGuidedDraft(markdown, description, body) {
-  const withDescription = updateDescription(markdown, description);
-  const match = withDescription.match(/^---\s*\r?\n[\s\S]*?\r?\n---/);
-  if (!match) return withDescription;
-  return `${match[0]}\n\n${body.replace(/^\s+|\s+$/g, "")}\n`;
 }
 
 function skillIcon(skill, className = "skill-icon") {
@@ -348,10 +299,99 @@ function setEditorMode(mode) {
 
 function syncGuidedFields() {
   if (!state.editor) return;
-  const document = parseDraftDocument(state.editor.draftMarkdown);
+  const document = parseSkillDocument(state.editor.draftMarkdown);
   elements.draftName.value = document.name;
   elements.draftDescription.value = document.description;
-  elements.draftBody.value = document.body;
+  renderGuidedSections(document);
+}
+
+function renderGuidedSections(skillDocument) {
+  const hasHeadings = skillDocument.sections.some((section) => section.kind === "heading");
+  elements.draftSections.hidden = !hasHeadings;
+  elements.draftBodyFallbackField.hidden = hasHeadings;
+  elements.draftSectionCount.textContent = hasHeadings ? String(skillDocument.sections.length) : "1";
+
+  if (!hasHeadings) {
+    elements.draftBodyFallback.value = skillDocument.body;
+    elements.draftSections.replaceChildren();
+    return;
+  }
+
+  const sectionNodes = skillDocument.sections.map((section) => {
+    const article = documentNode("article", "section-editor-item");
+    article.style.setProperty("--outline-depth", String(Math.min(Math.max(section.level - 1, 0), 3)));
+
+    const header = documentNode("div", "section-editor-header");
+    const level = documentNode("span", "heading-level");
+    level.textContent = section.kind === "preamble" ? "正文" : `H${section.level}`;
+
+    const title = document.createElement("input");
+    title.className = "section-title-input";
+    title.value = section.title;
+    title.readOnly = !section.titleEditable;
+    title.setAttribute("aria-label", section.titleEditable ? `${section.title} 标题` : section.title);
+    if (section.titleEditable) {
+      title.addEventListener("change", () => {
+        if (!title.value.trim()) {
+          title.value = section.title;
+          showToast("章节标题不能为空。", true);
+          return;
+        }
+        setDraftMarkdown(updateSkillDocument(state.editor.draftMarkdown, {
+          type: "section-title",
+          index: section.index,
+          value: title.value
+        }));
+      });
+    }
+
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "icon-button compact section-toggle";
+    toggle.title = "收起章节";
+    toggle.setAttribute("aria-label", `收起 ${section.title}`);
+    toggle.setAttribute("aria-expanded", "true");
+    const toggleIcon = document.createElement("i");
+    toggleIcon.dataset.lucide = "chevron-down";
+    toggle.append(toggleIcon);
+
+    const content = document.createElement("textarea");
+    content.className = "section-content-input";
+    content.value = section.content;
+    content.spellcheck = false;
+    content.rows = Math.min(Math.max(section.content.split(/\r?\n/).length + 1, 3), 12);
+    content.setAttribute("aria-label", `${section.title} 内容`);
+    content.addEventListener("input", () => {
+      setDraftMarkdown(updateSkillDocument(state.editor.draftMarkdown, {
+        type: "section-content",
+        index: section.index,
+        value: content.value
+      }));
+    });
+
+    toggle.addEventListener("click", () => {
+      const expanded = toggle.getAttribute("aria-expanded") === "true";
+      toggle.setAttribute("aria-expanded", String(!expanded));
+      toggle.title = expanded ? "展开章节" : "收起章节";
+      toggle.setAttribute("aria-label", `${expanded ? "展开" : "收起"} ${title.value}`);
+      article.classList.toggle("is-collapsed", expanded);
+      content.hidden = expanded;
+      toggleIcon.dataset.lucide = expanded ? "chevron-right" : "chevron-down";
+      refreshIcons();
+    });
+
+    header.append(level, title, toggle);
+    article.append(header, content);
+    return article;
+  });
+  elements.draftSections.replaceChildren(...sectionNodes);
+  refreshIcons();
+}
+
+function documentNode(tagName, className) {
+  const node = document.createElement(tagName);
+  node.className = className;
+  return node;
 }
 
 function editorChanged() {
@@ -666,15 +706,17 @@ elements.editorDialog.addEventListener("close", () => {
 });
 elements.draftDescription.addEventListener("input", () => {
   if (!state.editor) return;
-  setDraftMarkdown(
-    updateGuidedDraft(state.editor.draftMarkdown, elements.draftDescription.value, elements.draftBody.value)
-  );
+  setDraftMarkdown(updateSkillDocument(state.editor.draftMarkdown, {
+    type: "description",
+    value: elements.draftDescription.value
+  }));
 });
-elements.draftBody.addEventListener("input", () => {
+elements.draftBodyFallback.addEventListener("input", () => {
   if (!state.editor) return;
-  setDraftMarkdown(
-    updateGuidedDraft(state.editor.draftMarkdown, elements.draftDescription.value, elements.draftBody.value)
-  );
+  setDraftMarkdown(updateSkillDocument(state.editor.draftMarkdown, {
+    type: "body",
+    value: elements.draftBodyFallback.value
+  }));
 });
 elements.draftSource.addEventListener("input", () => {
   setDraftMarkdown(elements.draftSource.value, { syncSource: false });

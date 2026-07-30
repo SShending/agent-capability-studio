@@ -2,8 +2,8 @@
 
 ## Current Position
 
-- Active phase: Phase 2 plan refinement
-- In-progress task: none
+- Active phase: Phase 2 implementation
+- In-progress task: 2.1 Define the Skill Draft document model and form flow
 - Last accepted milestone: Phase 1 native desktop vertical slice
 - Blocking decisions: none
 - Validation item: confirm the final minimum macOS version before public release
@@ -39,6 +39,8 @@ Tasks:
 
 ## Phase 2 - Guided Skill Creation
 
+Detailed plan: [02-guided-skill-creation.md](docs/phases/02-guided-skill-creation.md)
+
 Outcome: a non-programmer creates a valid personal Codex Skill without editing
 files directly.
 
@@ -52,7 +54,7 @@ Acceptance:
 
 Tasks:
 
-- [ ] 2.1 Define the Skill Draft creation contract and form flow.
+- [ ] 2.1 Define the Skill Draft document model and heading-aware form flow. (in progress)
 - [ ] 2.2 Implement safe Rust creation commands and collision handling.
 - [ ] 2.3 Add draft preview, audit, confirmation, and post-create navigation.
 - [ ] 2.4 Verify with first-time and error-recovery usability scenarios.

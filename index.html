@@ -217,10 +217,17 @@
                 <span>用途与触发条件</span>
                 <textarea id="draft-description" spellcheck="false"></textarea>
               </label>
-              <label class="editor-field instruction-field">
-                <span>工作步骤</span>
-                <textarea id="draft-body" spellcheck="false"></textarea>
-              </label>
+              <section class="structured-editor" aria-labelledby="draft-structure-label">
+                <div class="structured-editor-heading">
+                  <span id="draft-structure-label">文档结构</span>
+                  <strong id="draft-section-count">0</strong>
+                </div>
+                <div class="draft-sections" id="draft-sections"></div>
+                <label class="editor-field instruction-field" id="draft-body-fallback-field" hidden>
+                  <span>正文</span>
+                  <textarea id="draft-body-fallback" spellcheck="false"></textarea>
+                </label>
+              </section>
             </div>
 
             <div class="source-editor" id="source-editor" hidden>
