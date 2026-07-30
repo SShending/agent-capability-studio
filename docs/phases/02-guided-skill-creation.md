@@ -96,7 +96,7 @@ instructions differently, so the editor must derive its form from each
 - Task 2.2: completed on 2026-07-30 after Rust command tests covered preview,
   source collisions, stale previews, directory races, invalid and oversized
   drafts, cleanup on failed writes, and created-Skill discoverability. The
-  native-window workflow remains part of Task 2.3 and Task 2.4.
+  native-window human workflow remains part of Task 2.4.
 - Task 2.3: completed on 2026-07-30. The desktop flow reuses the guided editor
   for a new Markdown draft, previews its destination and conflicts, requires an
   explicit confirmation, then refreshes and opens the created Skill. Frontend,
