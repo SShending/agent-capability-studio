@@ -6,11 +6,28 @@ const NEGATIONS: &[&str] = &[
     "never ",
     "avoid ",
     "must not ",
+    "should not ",
     "禁止",
     "不要",
     "切勿",
     "不得",
     "请勿",
+    "不应",
+    "不能",
+    "不可",
+    "避免",
+];
+
+const EXPLANATORY_CUES: &[&str] = &[
+    "for example",
+    "dangerous example",
+    "should be blocked",
+    "例如",
+    "举例",
+    "作为示例",
+    "危险示例",
+    "应被阻止",
+    "属于危险",
 ];
 
 const NETWORK: &[&str] = &[
@@ -106,7 +123,7 @@ pub(super) fn safety_findings(markdown: &str) -> Vec<Finding> {
         .enumerate()
         .filter_map(|(index, line)| {
             let lower = line.to_ascii_lowercase();
-            (!is_negated(&lower)).then_some((index + 1, line, lower))
+            (!is_non_actionable(&lower)).then_some((index + 1, line, lower))
         })
         .collect();
     let mut findings = Vec::new();
@@ -127,6 +144,16 @@ pub(super) fn safety_findings(markdown: &str) -> Vec<Finding> {
             "blocker",
             "发现破坏性文件操作",
             "该指令可能递归删除数据、抹除磁盘或直接写入设备。",
+            evidence,
+            "high",
+        ));
+    }
+    if let Some(evidence) = first_match(&active_lines, is_destructive_data_intent) {
+        findings.push(finding(
+            "destructive-data-intent",
+            "blocker",
+            "要求大范围删除用户数据",
+            "即使没有给出具体命令，这条指令也要求删除或抹除大量用户、项目或系统数据。",
             evidence,
             "high",
         ));
@@ -254,8 +281,9 @@ fn first_match(
         .map(|(number, original, _)| format!("第 {number} 行：{}", truncate(original.trim(), 220)))
 }
 
-fn is_negated(line: &str) -> bool {
+fn is_non_actionable(line: &str) -> bool {
     NEGATIONS.iter().any(|marker| line.contains(marker))
+        || EXPLANATORY_CUES.iter().any(|marker| line.contains(marker))
 }
 
 fn is_remote_execution(line: &str) -> bool {
@@ -274,6 +302,43 @@ fn is_destructive_filesystem(line: &str) -> bool {
         .any(|marker| line.contains(marker))
         || (line.contains("find ") && line.contains(" -delete"))
         || (line.contains("dd ") && line.contains("of=/dev/"))
+}
+
+fn is_destructive_data_intent(line: &str) -> bool {
+    let chinese_verb = ["删除", "清空", "抹除", "擦除", "销毁"]
+        .iter()
+        .any(|marker| line.contains(marker));
+    let chinese_scope = [
+        "用户所有文件",
+        "用户全部文件",
+        "所有用户文件",
+        "全部用户文件",
+        "所有文件",
+        "全部文件",
+        "所有数据",
+        "全部数据",
+        "整个用户目录",
+        "整个主目录",
+        "整个项目",
+        "整个系统",
+    ]
+    .iter()
+    .any(|marker| line.contains(marker));
+    let english_verb = ["delete", "erase", "wipe", "destroy"]
+        .iter()
+        .any(|marker| line.contains(marker));
+    let english_scope = [
+        "all user files",
+        "every user file",
+        "all files",
+        "all data",
+        "entire home directory",
+        "entire project",
+        "entire system",
+    ]
+    .iter()
+    .any(|marker| line.contains(marker));
+    (chinese_verb && chinese_scope) || (english_verb && english_scope)
 }
 
 fn is_outbound_transfer(line: &str) -> bool {

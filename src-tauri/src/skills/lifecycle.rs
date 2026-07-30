@@ -1,4 +1,7 @@
-use super::{InternalSkill, NameConflict, Source, Workspace, WorkspaceError, MAX_SCAN_DEPTH};
+use super::{
+    hash, InternalSkill, NameConflict, SkillDetail, Source, Workspace, WorkspaceError,
+    MAX_SCAN_DEPTH,
+};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::{
@@ -30,6 +33,7 @@ pub struct LifecycleResult {
     pub destination: String,
     pub directory_revision: String,
     pub restart_recommended: bool,
+    pub skill: SkillDetail,
 }
 
 #[derive(Debug, Serialize)]
@@ -130,25 +134,14 @@ impl Workspace {
         if action == LifecycleAction::Delete {
             return Err(WorkspaceError::LifecycleNotAllowed);
         }
-        let preview = self.preview_skill_lifecycle(id, action.label())?;
-        if expected_directory_revision.is_empty()
-            || expected_directory_revision != preview.directory_revision
-        {
-            return Err(WorkspaceError::DirectoryChanged);
-        }
-        if preview.conflict.is_some() {
-            return Err(WorkspaceError::NameConflict {
-                name: preview.name,
-                source_label: preview.destination_source.unwrap_or_default(),
-            });
-        }
-
         let skill = self.find_skill(id)?;
         let target_source = action
             .destination_source(skill.source)?
             .ok_or(WorkspaceError::LifecycleNotAllowed)?;
         let source_directory = validated_skill_directory(&skill)?;
-        if directory_revision(&source_directory)? != expected_directory_revision {
+        let current_revision = directory_revision(&source_directory)?;
+        if expected_directory_revision.is_empty() || current_revision != expected_directory_revision
+        {
             return Err(WorkspaceError::DirectoryChanged);
         }
         let target_root = self.managed_root_for_lifecycle(target_source)?;
@@ -167,13 +160,23 @@ impl Workspace {
         let moved = self
             .read_skill(&destination, target_source, &target_root)?
             .ok_or(WorkspaceError::UnsafePath)?;
+        let id = moved.summary.id.clone();
+        let moved_revision = directory_revision(&destination)?;
+        let detail = SkillDetail {
+            content_hash: hash(&moved.markdown),
+            summary: moved.summary,
+            markdown: moved.markdown,
+            document: moved.document,
+            editable: target_source == Source::Personal,
+        };
         Ok(LifecycleResult {
             ok: true,
-            id: moved.summary.id,
+            id,
             source: target_source.label().into(),
             destination: destination.display().to_string(),
-            directory_revision: directory_revision(&destination)?,
+            directory_revision: moved_revision,
             restart_recommended: true,
+            skill: detail,
         })
     }
 
@@ -183,27 +186,23 @@ impl Workspace {
         expected_directory_revision: &str,
         confirmation_name: &str,
     ) -> Result<DeleteSkillResult, WorkspaceError> {
-        let preview = self.preview_skill_lifecycle(id, "delete")?;
-        if confirmation_name != preview.name {
-            return Err(WorkspaceError::DeleteConfirmationMismatch);
-        }
-        if expected_directory_revision.is_empty()
-            || expected_directory_revision != preview.directory_revision
-        {
-            return Err(WorkspaceError::DirectoryChanged);
-        }
         let skill = self.find_skill(id)?;
         if skill.source != Source::Archive {
             return Err(WorkspaceError::LifecycleNotAllowed);
         }
+        if confirmation_name != skill.summary.name {
+            return Err(WorkspaceError::DeleteConfirmationMismatch);
+        }
         let directory = validated_skill_directory(&skill)?;
-        if directory_revision(&directory)? != expected_directory_revision {
+        let current_revision = directory_revision(&directory)?;
+        if expected_directory_revision.is_empty() || current_revision != expected_directory_revision
+        {
             return Err(WorkspaceError::DirectoryChanged);
         }
         fs::remove_dir_all(directory)?;
         Ok(DeleteSkillResult {
             ok: true,
-            deleted_name: preview.name,
+            deleted_name: skill.summary.name,
             restart_recommended: true,
         })
     }
@@ -371,6 +370,8 @@ mod tests {
             .apply_skill_lifecycle(&personal_id, "disable", &disable.directory_revision)
             .expect("disable");
         assert_eq!(disabled.source, "disabled");
+        assert_eq!(disabled.skill.summary.source, "disabled");
+        assert!(!disabled.skill.editable);
         assert!(directory
             .path()
             .join("skills-disabled/lifecycle/scripts/helper.sh")

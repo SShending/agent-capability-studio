@@ -42,8 +42,9 @@ programming background.
    and exact differences, then explicitly save or discard it.
 3. Create a Skill through a guided flow for purpose, trigger behavior, workflow,
    supporting files, and target Agent compatibility.
-4. Inspect a GitHub or local Skill candidate before installation; keep audit and
-   installation as separate user actions.
+4. Inspect a GitHub or local Skill candidate before installation; optionally run
+   a user-configured cloud semantic review after confirming the exact content
+   and destination, while keeping audit and installation separate.
 5. Export user-controlled Skills as a manifest-and-hash bundle, then verify,
    stage, compare, and explicitly install them on another machine.
 6. Disable, re-enable, archive, restore, or permanently delete personal Skills
@@ -60,6 +61,9 @@ programming background.
 - Every save or installation presents exact changes and relevant findings before
   mutation.
 - Audit never installs, enables, deletes, or executes an untrusted Skill.
+- Baseline Audit never uses the network. Deep Audit sends only explicitly
+  confirmed content to the user's configured cloud model and identifies that
+  provider in its result.
 - Concurrent edits are detected before overwrite; path traversal and unsafe
   archive entries are rejected.
 - Export and import move eligible Skills between the local Mac and a server while
@@ -85,8 +89,9 @@ programming background.
   conflicts, installation, and findings needing manual review.
 - Filesystem: validate and contain every read, extraction, move, and write. Use
   hashes for optimistic concurrency and atomic replacement for saved files.
-- Privacy: operate locally by default. Do not upload Skill contents, credentials,
-  audit results, or usage data without an explicit future feature and consent.
+- Privacy: operate locally by default. Cloud Deep Audit is opt-in, user
+  configured, and confirmed per scan with the destination and files shown. Do
+  not upload credentials, unrelated files, prior results, or usage data.
 - Reports: keep audit results ephemeral unless the user explicitly exports one.
 - Compatibility: implement Codex first behind an Agent compatibility seam; add
   other Agents only after their contracts are tested.
@@ -174,6 +179,10 @@ tools can remain discovery, distribution, scanning, or debugging backends.
   web frontend hosted by the Tauri WebView.
 - Preserve the audit interface so deterministic built-in checks and optional
   external scanner adapters return the same evidence model.
+- Keep cloud semantic analysis behind a provider adapter. Treat Skill content as
+  untrusted data, disable tool execution, require structured evidence grounded
+  in submitted files, and run an independent false-positive review before
+  aggregation.
 - Prove the architecture with one end-to-end vertical slice before porting every
   existing management action.
 
@@ -197,6 +206,8 @@ tools can remain discovery, distribution, scanning, or debugging backends.
 - Keep GitHub and local candidate audit in v0.1.
 - Define an external-scanner adapter seam in v0.1 without requiring a scanner
   integration or recreating a scanning engine.
+- Let the user configure the cloud model used for optional Deep Audit; never
+  reuse Codex login credentials or silently send Skill content.
 - Allow unsigned local development builds; sign and notarize the public v0.1
   release.
 - Exclude credentials from Skill Bundles and do not add bundle encryption in
@@ -207,3 +218,8 @@ tools can remain discovery, distribution, scanning, or debugging backends.
   capability type after v0.1 before expanding or renaming the product.
 - Target macOS 13 or later provisionally; verify the final minimum against Tauri,
   WebKit, signing, and tested feature requirements before release.
+
+## Open Decisions
+
+- [ ] Confirm the first cloud-model interface. Recommended: an OpenAI-compatible
+  endpoint, model name, and API key, with the secret stored in macOS Keychain.

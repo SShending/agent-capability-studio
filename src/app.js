@@ -747,8 +747,7 @@ async function requestSkillLifecycle(action, skill) {
       }
       : async () => {
         const result = await desktop.applySkillLifecycle(skill.id, action, preview.directoryRevision);
-        await loadSkills({ preserveSelection: false });
-        await selectSkill(result.id);
+        await loadSkills({ preserveSelection: false, selectedDetail: result.skill });
         showToast(`${config[2].replace("确认", "")}完成。请在新任务中使用最新状态。`);
       };
     presentConfirmation({
@@ -777,7 +776,7 @@ function showToast(message, isError = false) {
   }, isError ? 6500 : 4200);
 }
 
-async function loadSkills({ preserveSelection = true } = {}) {
+async function loadSkills({ preserveSelection = true, selectedDetail = null } = {}) {
   elements.refresh.classList.add("is-spinning");
   elements.refresh.disabled = true;
   try {
@@ -786,7 +785,12 @@ async function loadSkills({ preserveSelection = true } = {}) {
     state.counts = data.counts;
     state.roots = data.roots;
     state.codexHome = data.codexHome;
-    if (!preserveSelection || !state.skills.some((skill) => skill.id === state.selectedId)) {
+    if (selectedDetail && state.skills.some((skill) => skill.id === selectedDetail.id)) {
+      state.selectedId = selectedDetail.id;
+      state.detail = selectedDetail;
+      elements.detailPanel.classList.add("is-open");
+      renderDetail();
+    } else if (!preserveSelection || !state.skills.some((skill) => skill.id === state.selectedId)) {
       state.selectedId = null;
       state.detail = null;
       renderDetail();

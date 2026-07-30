@@ -44,6 +44,8 @@ and open-source implementations before recommending or implementing it.
   concrete compatibility contract and tests.
 - Keep one evidence model for built-in checks and optional external scanner
   adapters: finding, evidence, severity, confidence, and verdict.
+- Keep cloud semantic analysis behind a provider adapter; do not couple Audit to
+  one vendor's response schema.
 
 ## Technology
 
@@ -96,8 +98,13 @@ and open-source implementations before recommending or implementing it.
   lifecycle concurrency, and atomic replacement or same-filesystem rename for
   writes and state moves.
 - Do not execute untrusted Skill scripts during acquisition, import, or audit.
-- Keep Skill contents, audit evidence, and usage data local unless a future
-  explicitly approved feature states otherwise.
+- Baseline Audit must be local and offline. Deep Audit may send only the files
+  explicitly confirmed for that scan to the user's configured cloud provider.
+- Treat content submitted to a cloud model as untrusted data: provide no tools,
+  accept only structured evidence grounded in submitted files, and independently
+  review likely false positives before producing the aggregated verdict.
+- Never store cloud credentials in project files, Skill directories, logs, or
+  audit evidence, and never reuse Codex authentication credentials.
 
 ## User Experience
 
@@ -110,6 +117,8 @@ and open-source implementations before recommending or implementing it.
 - Require explicit confirmation for installation, lifecycle mutations,
   permanent deletion, overwrites, conflicts, and findings that require manual
   review.
+- Before every cloud Deep Audit, show the provider endpoint and exact files that
+  will leave the machine; cancellation performs no network request.
 - Do not generate persistent HTML reports unless the user explicitly exports one.
 
 ## Engineering
@@ -132,5 +141,7 @@ and open-source implementations before recommending or implementing it.
 - Do not add one-click bulk policy rewrites.
 - Do not mutate system or plugin-managed Skills.
 - Do not conflate audit, import, save, and installation confirmations.
+- Do not silently upload Skill content or make cloud Deep Audit a prerequisite
+  for local editing and creation.
 - Do not claim universal cross-Agent compatibility without adapter evidence.
 - Do not expand v0.1 into a general Agent configuration manager.

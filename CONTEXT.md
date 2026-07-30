@@ -35,8 +35,8 @@ local directory.
 _Avoid_: Download, package
 
 **Audit Result**:
-The evidence, findings, confidence, and verdict produced for one exact Candidate
-Skill version.
+The evidence, findings, confidence, and verdict produced for one exact Skill
+revision, including the named analyzers and cloud provider when applicable.
 _Avoid_: Security certificate, safety guarantee
 
 **Verdict**:
@@ -44,10 +44,30 @@ One of three evidence-based conclusions: no blocking findings, manual review
 required, or blocking recommended.
 _Avoid_: Safe, secure
 
+**Destructive Data Intent**:
+An instruction directing an Agent to erase a broad set of user, project, or
+system data, whether or not it contains a recognizable shell command.
+_Avoid_: Routine cleanup, dangerous-command substring
+
 **Audit**:
 An evidence-gathering inspection of a specific Skill revision. An Audit does
 not install, enable, modify, or remove the Skill.
 _Avoid_: Approval, certification
+
+**Baseline Audit**:
+A deterministic, local, offline Audit that provides immediate structural and
+high-signal evidence but does not claim broad semantic coverage.
+_Avoid_: Deep Audit, complete scan
+
+**Deep Audit**:
+An explicit Audit that combines maintained scanner evidence with a
+user-configured cloud semantic review of confirmed Skill files.
+_Avoid_: Automatic upload, Baseline Audit
+
+**Cloud Model Profile**:
+The user-owned provider destination, model selection, and protected credential
+used only for confirmed Deep Audits.
+_Avoid_: Codex login, application account
 
 **Installation Confirmation**:
 The user's explicit decision to place an audited Skill revision into a target

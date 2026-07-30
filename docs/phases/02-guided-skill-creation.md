@@ -2,8 +2,9 @@
 
 ## Status
 
-Task 2.1 was accepted by the project owner on 2026-07-30. Tasks 2.2, 2.3, 2.5,
-and 2.6 are complete. Task 2.4 is in progress as the unified acceptance pass.
+Task 2.1 was accepted by the project owner on 2026-07-30. Tasks 2.2, 2.3, and
+2.6 are complete. Task 2.5 was reopened after unified acceptance found a missed
+Chinese destructive-data instruction; Task 2.4 is pending until it is fixed.
 The current creation command accepts Markdown only. Supporting-file authoring
 remains a later capability and is not silently accepted or written.
 
@@ -30,6 +31,8 @@ instructions differently, so the editor must derive its form from each
 - Revalidate maintained Skill scanners before extending detection. Keep mature
   scanning engines external and map their results into the Studio evidence
   model instead of recreating them.
+- Keep Baseline Audit local and immediate. Deep Audit is a separate explicit
+  action using a user-configured cloud model; cancellation sends nothing.
 
 ## Task Breakdown
 
@@ -85,7 +88,7 @@ instructions differently, so the editor must derive its form from each
 
 ### Task 2.4 - Usability And Recovery Verification
 
-- Status: in progress
+- Status: pending
 - Outcome: first-time creation, safety explanation, lifecycle mutation, and
   error-recovery scenarios pass together in the native app.
 - Dependencies: complete Tasks 2.5 and 2.6 before asking the project owner to
@@ -93,7 +96,7 @@ instructions differently, so the editor must derive its form from each
 
 ### Task 2.5 - Safety Evidence Hardening
 
-- Status: completed
+- Status: in progress (reopened)
 - Outcome: editing and creation expose a truthful, higher-signal safety baseline
   without presenting the Studio as a complete security scanner.
 - Details:
@@ -103,26 +106,34 @@ instructions differently, so the editor must derive its form from each
   - define a capability inventory for command execution, filesystem mutation,
     sensitive-data access, network transfer, dependency installation,
     persistence, and indirect or staged execution;
+  - detect high-confidence destructive data intent expressed in natural
+    language, including Chinese instructions without literal shell commands;
   - separate structural blockers, high-confidence dangerous behavior, and
     ambiguous review findings, each with exact evidence and confidence;
   - replace "clear" language with wording that states the limits of the built-in
     checks;
   - preserve the shared finding/evidence/severity/confidence/verdict model so
     Phase 3 external scanner adapters can reuse the same interface.
+  - add a provider adapter for structured semantic threat review, followed by an
+    independent false-positive review and evidence aggregation;
+  - show the configured endpoint and exact files before every request, send no
+    content until confirmed, and never expose the credential in evidence or logs.
 - Affected files: the Rust audit module and fixtures, frontend finding and
   verdict presentation, scanner research notes, and plan/limitation docs.
 - Key design: keep the built-in module deterministic, local, side-effect free,
   and high precision. Do not execute candidate content or grow a home-built
   general security engine.
-- Dependencies: fresh existing-solution validation and an agreed adversarial
-  fixture corpus before expanding blocker rules.
+- Dependencies: fresh existing-solution validation, an agreed adversarial
+  fixture corpus, and owner confirmation of the first cloud-model interface and
+  credential store.
 - Automated verification: benign negation examples do not block; direct and
   staged high-impact examples produce stable evidence; obfuscated or ambiguous
   cases become review findings; fixture tests cover shell, Python, JavaScript,
   network, credential, persistence, and destructive filesystem behavior.
 - Human verification: a non-programmer can distinguish “no known baseline issue”
   from “safe”, understand why a finding fired, and identify what requires manual
-  judgment or an external scanner.
+  judgment or an external scanner; no cloud request occurs before explicit
+  confirmation.
 
 ### Task 2.6 - Guarded Personal Skill Lifecycle
 
@@ -209,4 +220,7 @@ instructions differently, so the editor must derive its form from each
   actions passed 22 Rust tests plus the frontend production build.
 - Task 2.4: its first pass exposed the missing delete workflow, so the project
   owner moved unified acceptance after Tasks 2.5 and 2.6.
-- Remaining execution: run Task 2.4 unified acceptance in the native app.
+- Task 2.5: reopened when the exact instruction `删除用户所有文件` produced no
+  dangerous finding; the sentence is now a required regression fixture.
+- Remaining execution: close the Task 2.5 natural-language gap, address
+  acceptance performance feedback, then repeat Task 2.4 in the native app.
