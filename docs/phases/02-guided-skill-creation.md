@@ -178,6 +178,46 @@ instructions differently, so the editor must derive its form from each
   restore it; verify conflict recovery; permanently delete it from archive and
   confirm that no delete control appears for active, system, or plugin Skills.
 
+### Task 2.7 - Lifecycle Performance Stabilization
+
+- Status: pending
+- Outcome: lifecycle actions remain responsive with a large personal catalog and
+  deep plugin cache, without weakening containment or concurrency checks.
+- Current evidence:
+  - directory moves themselves use same-filesystem rename and are normally fast;
+  - the first implementation repeatedly scanned every managed source and plugin
+    cache, recalculated the affected directory, refreshed the whole catalog, and
+    scanned again to open the moved Skill;
+  - Task 2.6 follow-up work already removed duplicate scans inside apply/delete
+    and returns the moved Skill detail so the frontend does not scan again merely
+    to reopen it;
+  - full catalog discovery and unchanged-Skill audit work still need indexing
+    and incremental refresh.
+- Details:
+  - instrument catalog discovery, Skill parsing, audit, directory-revision, and
+    lifecycle timings plus invocation counts in tests and development builds;
+  - maintain an in-memory catalog index from Skill ID to owned canonical path,
+    source, summary, and revision inputs;
+  - reuse unchanged discovery and audit results, invalidate affected entries
+    after Studio mutations, and retain explicit full Refresh for external
+    filesystem changes;
+  - update the moved entry and catalog counts incrementally after a successful
+    lifecycle action instead of rescanning unrelated plugin and Skill roots;
+  - preserve one affected-directory hash at preview and a fresh affected-
+    directory hash immediately before apply; these are required concurrency
+    checks, not removable duplication.
+- Affected files: Rust catalog/workspace indexing, lifecycle result handling,
+  frontend refresh state, performance fixtures, and development diagnostics.
+- Key design: cache read-only discovery and explanation work, never mutation
+  authority. Apply-time containment, conflict, source ownership, and directory
+  revision checks always read current filesystem state.
+- Automated verification: a synthetic large catalog proves lifecycle preview,
+  apply, and post-action selection do not trigger repeated full-source scans;
+  cache invalidation tests cover external Refresh, Studio moves, saves, creates,
+  deletes, conflicts, and stale revisions.
+- Human verification: archive and restore remain visually responsive on the
+  project owner's real catalog, with no stale list row or delayed detail panel.
+
 ## Risks And Mitigations
 
 - Markdown normalization: patch source ranges instead of serializing the full
@@ -194,6 +234,8 @@ instructions differently, so the editor must derive its form from each
   permanent deletion only inside archive with exact confirmation.
 - Directory races: hash the full directory at preview and repeat ownership,
   containment, revision, and destination checks immediately before mutation.
+- Catalog scale: index unchanged discovery and audit work, update Studio-owned
+  mutations incrementally, and keep full Refresh as the external-change path.
 
 ## Acceptance Record
 
@@ -222,5 +264,8 @@ instructions differently, so the editor must derive its form from each
   owner moved unified acceptance after Tasks 2.5 and 2.6.
 - Task 2.5: reopened when the exact instruction `删除用户所有文件` produced no
   dangerous finding; the sentence is now a required regression fixture.
-- Remaining execution: close the Task 2.5 natural-language gap, address
-  acceptance performance feedback, then repeat Task 2.4 in the native app.
+- Task 2.7: added after archive and restore felt slow on the owner's real
+  catalog. Duplicate apply/detail scans were already reduced, while catalog
+  indexing and deterministic performance verification remain pending.
+- Remaining execution: finish Task 2.5 Deep Audit, complete Task 2.7 performance
+  stabilization, then repeat Task 2.4 in the native app.

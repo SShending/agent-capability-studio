@@ -97,6 +97,10 @@ and open-source implementations before recommending or implementing it.
 - Use content hashes for draft concurrency, complete-directory revisions for
   lifecycle concurrency, and atomic replacement or same-filesystem rename for
   writes and state moves.
+- Performance work may cache catalog discovery and unchanged audit results, but
+  must never reuse a preview revision as the apply-time mutation check. Recheck
+  containment, destination conflicts, and the affected directory revision
+  immediately before every lifecycle mutation.
 - Do not execute untrusted Skill scripts during acquisition, import, or audit.
 - Baseline Audit must be local and offline. Deep Audit may send only the files
   explicitly confirmed for that scan to the user's configured cloud provider.

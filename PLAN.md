@@ -59,6 +59,8 @@ Acceptance:
 - Personal Skills can be disabled, re-enabled, archived, restored, and
   permanently deleted through guarded actions; system and plugin Skills remain
   read-only.
+- Lifecycle actions avoid repeated full-catalog scans while retaining separate
+  preview-time and apply-time checks of the affected directory revision.
 
 Tasks:
 
@@ -68,6 +70,7 @@ Tasks:
 - [ ] 2.4 Run unified creation, safety, lifecycle, and recovery acceptance after Tasks 2.5 and 2.6.
 - [ ] 2.5 Harden built-in safety evidence and validate scanner integration options. (reopened after acceptance finding)
 - [x] 2.6 Implement guarded personal Skill lifecycle actions.
+- [ ] 2.7 Eliminate lifecycle catalog rescans and verify responsive transitions.
 
 ## Phase 3 - GitHub And Local Candidate Audit
 
