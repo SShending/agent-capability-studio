@@ -122,6 +122,16 @@ function updateDescription(markdown, description) {
   return `---\n${lines.join("\n")}\n---${markdown.slice(match[0].length - (match[0].endsWith("\n") ? 1 : 0))}`;
 }
 
+function updateName(markdown, name) {
+  const { match } = parseFrontmatter(markdown);
+  if (!match) return markdown;
+  const lines = match[1].split(/\r?\n/);
+  const index = lines.findIndex((line) => /^name:/.test(line));
+  if (index >= 0) lines[index] = `name: ${name.trim()}`;
+  else lines.unshift(`name: ${name.trim()}`);
+  return `---\n${lines.join("\n")}\n---${markdown.slice(match[0].length - (match[0].endsWith("\n") ? 1 : 0))}`;
+}
+
 function updateBody(markdown, body) {
   const { match } = parseFrontmatter(markdown);
   if (!match) return body;
@@ -150,6 +160,8 @@ function updateSection(markdown, mutation) {
 
 export function updateSkillDocument(markdown, mutation) {
   switch (mutation.type) {
+    case "name":
+      return updateName(markdown, mutation.value);
     case "description":
       return updateDescription(markdown, mutation.value);
     case "body":

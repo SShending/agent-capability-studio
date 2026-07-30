@@ -54,6 +54,14 @@ test("updates a heading through the same document interface", () => {
   assert.doesNotMatch(updated, /## Workflow/);
 });
 
+test("updates the frontmatter name without changing the document body", () => {
+  const updated = updateSkillDocument(markdown, { type: "name", value: "project-plan" });
+  assert.equal(parseSkillDocument(updated).name, "project-plan");
+  assert.match(updated, /description: >-/);
+  assert.match(updated, /## Workflow/);
+  assert.doesNotMatch(updated, /name: demo/);
+});
+
 test("keeps heading-free documents available as a body fallback", () => {
   const source = "---\nname: plain\ndescription: Plain Skill.\n---\n\nDo this carefully.\n";
   const document = parseSkillDocument(source);

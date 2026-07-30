@@ -73,7 +73,7 @@ instructions differently, so the editor must derive its form from each
 
 ### Task 2.3 - Creation Review And Confirmation
 
-- Status: pending
+- Status: completed
 - Outcome: preview and audit a complete draft before explicit creation.
 
 ### Task 2.4 - Usability And Recovery Verification
@@ -97,4 +97,8 @@ instructions differently, so the editor must derive its form from each
   source collisions, stale previews, directory races, invalid and oversized
   drafts, cleanup on failed writes, and created-Skill discoverability. The
   native-window workflow remains part of Task 2.3 and Task 2.4.
-- Remaining Phase 2 tasks: 2.3 and 2.4.
+- Task 2.3: completed on 2026-07-30. The desktop flow reuses the guided editor
+  for a new Markdown draft, previews its destination and conflicts, requires an
+  explicit confirmation, then refreshes and opens the created Skill. Frontend,
+  Rust, and production-build checks passed; Tauri development window launched.
+- Remaining Phase 2 task: 2.4 human usability and recovery verification.

@@ -28,10 +28,7 @@ const elements = {
   search: document.querySelector("#search-input"),
   sort: document.querySelector("#sort-select"),
   refresh: document.querySelector("#refresh-button"),
-  install: document.querySelector("#install-button"),
-  installDialog: document.querySelector("#install-dialog"),
-  installForm: document.querySelector("#install-form"),
-  installSubmit: document.querySelector("#install-submit"),
+  create: document.querySelector("#create-skill-button"),
   confirmDialog: document.querySelector("#confirm-dialog"),
   confirmForm: document.querySelector("#confirm-form"),
   confirmTitle: document.querySelector("#confirm-title"),
@@ -68,6 +65,9 @@ const elements = {
   diffView: document.querySelector("#diff-view"),
   diffBefore: document.querySelector("#diff-before"),
   diffAfter: document.querySelector("#diff-after"),
+  creationPreview: document.querySelector("#creation-preview"),
+  creationDestination: document.querySelector("#creation-destination"),
+  creationState: document.querySelector("#creation-state"),
   toast: document.querySelector("#toast"),
   toastMessage: document.querySelector("#toast-message")
 };
@@ -301,6 +301,7 @@ function syncGuidedFields() {
   if (!state.editor) return;
   const document = parseSkillDocument(state.editor.draftMarkdown);
   elements.draftName.value = document.name;
+  elements.draftName.readOnly = !state.editor.isNew;
   elements.draftDescription.value = document.description;
   renderGuidedSections(document);
 }
@@ -400,10 +401,12 @@ function editorChanged() {
 
 function updateEditorStatus() {
   const changed = editorChanged();
-  elements.draftStatus.textContent = changed ? "有未保存修改" : "未修改";
+  const creating = state.editor?.isNew;
+  elements.draftStatus.textContent = creating ? "尚未创建" : changed ? "有未保存修改" : "未修改";
   elements.draftStatus.classList.toggle("is-dirty", changed);
-  elements.saveDraft.disabled =
-    !changed || !state.editor?.audit || state.editor.audit.verdict === "block" || state.editor.auditLoading;
+  elements.saveDraft.disabled = creating
+    ? !state.editor?.preview?.canCreate || state.editor.auditLoading
+    : !changed || !state.editor?.audit || state.editor.audit.verdict === "block" || state.editor.auditLoading;
 }
 
 function setDraftMarkdown(markdown, { syncSource = true } = {}) {
@@ -411,8 +414,24 @@ function setDraftMarkdown(markdown, { syncSource = true } = {}) {
   state.editor.draftMarkdown = markdown;
   if (syncSource) elements.draftSource.value = markdown;
   state.editor.audit = null;
+  state.editor.preview = null;
+  renderCreationPreview(null);
   updateEditorStatus();
   scheduleDraftAudit();
+}
+
+function renderCreationPreview(preview) {
+  const creating = Boolean(state.editor?.isNew);
+  elements.creationPreview.hidden = !creating;
+  if (!creating) return;
+  elements.creationDestination.textContent = preview?.destination || "等待有效名称";
+  elements.creationState.textContent = preview?.conflict
+    ? `与${sourceLabels[preview.conflict.source] || preview.conflict.source}来源中的同名 Skill 冲突`
+    : preview?.canCreate
+      ? "可创建"
+      : "请解决阻断项后再创建";
+  elements.creationPreview.classList.toggle("has-conflict", Boolean(preview?.conflict));
+  elements.creationPreview.classList.toggle("is-ready", Boolean(preview?.canCreate));
 }
 
 function scheduleDraftAudit() {
@@ -515,12 +534,17 @@ async function runDraftAudit() {
   state.editor.auditLoading = true;
   renderAuditLoading();
   try {
-    const audit = await api(`/api/skills/${encodeURIComponent(editorId)}/audit`, {
-      method: "POST",
-      body: JSON.stringify({ markdown })
-    });
+    const result = state.editor.isNew
+      ? await desktop.previewNewSkill(markdown)
+      : await api(`/api/skills/${encodeURIComponent(editorId)}/audit`, {
+        method: "POST",
+        body: JSON.stringify({ markdown })
+      });
     if (!state.editor || state.editor.id !== editorId || sequence !== state.auditSequence) return;
+    const audit = state.editor.isNew ? result.audit : result;
     state.editor.audit = audit;
+    state.editor.preview = state.editor.isNew ? result : null;
+    renderCreationPreview(state.editor.preview);
     renderDraftAudit(audit);
   } catch (error) {
     if (sequence === state.auditSequence) renderAuditError(error.message);
@@ -545,13 +569,43 @@ async function openEditor(id) {
     originalMarkdown: detail.markdown,
     draftMarkdown: detail.markdown,
     audit: null,
+    preview: null,
     auditLoading: false,
-    auditTimer: null
+    auditTimer: null,
+    isNew: false
   };
   elements.editorTitle.textContent = detail.displayName;
   elements.draftSource.value = detail.markdown;
   syncGuidedFields();
   setEditorMode("guided");
+  updateEditorStatus();
+  elements.editorDialog.showModal();
+  refreshIcons();
+  await runDraftAudit();
+}
+
+function newSkillMarkdown() {
+  return `---\nname: new-skill\ndescription: >-\n  Use when the user asks for a repeatable task.\n---\n\n# New Skill\n\n## Workflow\n\n1. Read the request and the available context.\n2. Complete the task with the required checks.\n3. Return a concise, useful result.\n`;
+}
+
+async function openNewSkill() {
+  const markdown = newSkillMarkdown();
+  state.editor = {
+    id: "new",
+    originalMarkdown: markdown,
+    draftMarkdown: markdown,
+    audit: null,
+    preview: null,
+    auditLoading: false,
+    auditTimer: null,
+    isNew: true
+  };
+  elements.editorTitle.textContent = "新建 Skill";
+  elements.saveDraft.innerHTML = '<i data-lucide="plus"></i><span>创建 Skill</span>';
+  elements.draftSource.value = markdown;
+  syncGuidedFields();
+  setEditorMode("guided");
+  renderCreationPreview(null);
   updateEditorStatus();
   elements.editorDialog.showModal();
   refreshIcons();
@@ -579,8 +633,36 @@ async function performDraftSave() {
   }
 }
 
+async function performDraftCreate() {
+  if (!state.editor?.isNew || !state.editor.preview?.canCreate) return;
+  const { draftMarkdown, preview } = state.editor;
+  elements.saveDraft.disabled = true;
+  try {
+    const created = await desktop.createSkill(draftMarkdown, preview.draftHash);
+    elements.editorDialog.close();
+    state.editor = null;
+    showToast("Skill 已创建。请在新任务中使用最新版本。");
+    await loadSkills({ preserveSelection: false });
+    await selectSkill(created.id);
+  } catch (error) {
+    showToast(error.message, true);
+  } finally {
+    if (state.editor) updateEditorStatus();
+  }
+}
+
 function requestDraftSave() {
   if (!state.editor?.audit || state.editor.audit.verdict === "block") return;
+  if (state.editor.isNew) {
+    if (!state.editor.preview?.canCreate) return;
+    state.confirmAction = performDraftCreate;
+    elements.confirmTitle.textContent = "创建新 Skill";
+    elements.confirmMessage.textContent = `将在 ${state.editor.preview.destination} 创建 SKILL.md。`;
+    elements.confirmSubmit.textContent = "确认创建";
+    elements.confirmSubmit.className = "primary-button";
+    elements.confirmDialog.showModal();
+    return;
+  }
   if (state.editor.audit.verdict === "clear") {
     performDraftSave();
     return;
@@ -589,6 +671,7 @@ function requestDraftSave() {
   elements.confirmTitle.textContent = "保存需要复核的草稿";
   elements.confirmMessage.textContent = "检查发现了需要人工复核的行为。确认这些行为符合预期后再保存。";
   elements.confirmSubmit.textContent = "确认保存";
+  elements.confirmSubmit.className = "danger-button";
   elements.confirmDialog.showModal();
 }
 
@@ -690,7 +773,7 @@ elements.sort.addEventListener("change", () => {
 });
 
 elements.refresh.addEventListener("click", () => loadSkills());
-elements.install?.addEventListener("click", () => elements.installDialog.showModal());
+elements.create.addEventListener("click", openNewSkill);
 elements.closeDetail.addEventListener("click", () => elements.detailPanel.classList.remove("is-open"));
 elements.closeEditor.addEventListener("click", requestCloseEditor);
 elements.guidedMode.addEventListener("click", () => setEditorMode("guided"));
@@ -711,6 +794,13 @@ elements.draftDescription.addEventListener("input", () => {
     value: elements.draftDescription.value
   }));
 });
+elements.draftName.addEventListener("input", () => {
+  if (!state.editor?.isNew) return;
+  setDraftMarkdown(updateSkillDocument(state.editor.draftMarkdown, {
+    type: "name",
+    value: elements.draftName.value
+  }));
+});
 elements.draftBodyFallback.addEventListener("input", () => {
   if (!state.editor) return;
   setDraftMarkdown(updateSkillDocument(state.editor.draftMarkdown, {
@@ -721,8 +811,6 @@ elements.draftBodyFallback.addEventListener("input", () => {
 elements.draftSource.addEventListener("input", () => {
   setDraftMarkdown(elements.draftSource.value, { syncSource: false });
 });
-document.querySelector("#close-install-button").addEventListener("click", () => elements.installDialog.close());
-document.querySelector("#cancel-install-button").addEventListener("click", () => elements.installDialog.close());
 document.querySelector("#cancel-confirm-button").addEventListener("click", () => {
   state.confirmAction = null;
   elements.confirmDialog.close();
@@ -750,27 +838,6 @@ elements.confirmForm.addEventListener("submit", async (event) => {
   }
 });
 
-elements.installForm.addEventListener("submit", async (event) => {
-  if (event.submitter?.value !== "default") return;
-  event.preventDefault();
-  const formData = new FormData(elements.installForm);
-  elements.installSubmit.disabled = true;
-  try {
-    await api("/api/install", {
-      method: "POST",
-      body: JSON.stringify({ repo: formData.get("repo"), ref: formData.get("ref"), path: formData.get("path") })
-    });
-    elements.installDialog.close();
-    elements.installForm.reset();
-    elements.installForm.elements.ref.value = "main";
-    showToast("Skill 已安装。请在列表中检查后，于新任务中使用。");
-    await loadSkills({ preserveSelection: false });
-  } catch (error) {
-    showToast(error.message, true);
-  } finally {
-    elements.installSubmit.disabled = false;
-  }
-});
 
 document.addEventListener("keydown", (event) => {
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f") {

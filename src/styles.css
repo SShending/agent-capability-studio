@@ -1113,6 +1113,48 @@ button:disabled {
   border-bottom: 1px solid var(--line);
 }
 
+.creation-preview {
+  display: grid;
+  gap: 7px;
+  padding: 15px 18px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.38);
+  font-size: 10px;
+}
+
+.creation-preview[hidden] {
+  display: none;
+}
+
+.creation-preview > span {
+  color: var(--faint);
+  font-size: 9px;
+  font-weight: 620;
+}
+
+.creation-preview code {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.creation-preview strong {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 620;
+}
+
+.creation-preview.is-ready strong {
+  color: var(--green-dark);
+}
+
+.creation-preview.has-conflict strong {
+  color: #a45d11;
+}
+
 .review-heading,
 .review-section-title,
 .finding-heading {

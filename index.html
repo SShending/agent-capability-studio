@@ -68,7 +68,7 @@
             <button class="icon-button" id="refresh-button" type="button" aria-label="刷新" title="刷新">
               <i data-lucide="refresh-cw"></i>
             </button>
-            <button class="icon-button accent-button" id="install-button" type="button" aria-label="安装 Skill" title="安装 Skill" hidden>
+            <button class="icon-button accent-button" id="create-skill-button" type="button" aria-label="新建 Skill" title="新建 Skill">
               <i data-lucide="plus"></i>
             </button>
           </div>
@@ -150,28 +150,6 @@
       </aside>
     </div>
 
-    <dialog class="modal" id="install-dialog">
-      <form method="dialog" class="modal-shell" id="install-form">
-        <div class="modal-header">
-          <div><span class="modal-kicker">GitHub</span><h2>安装 Skill</h2></div>
-          <button class="icon-button" id="close-install-button" type="button" aria-label="关闭" title="关闭">
-            <i data-lucide="x"></i>
-          </button>
-        </div>
-        <div class="form-grid">
-          <label><span>仓库</span><input name="repo" placeholder="owner/repo" required /></label>
-          <label><span>分支或标签</span><input name="ref" value="main" required /></label>
-          <label class="full"><span>Skill 目录</span><input name="path" placeholder="skills/example" required /></label>
-        </div>
-        <div class="modal-footer">
-          <button class="secondary-button" id="cancel-install-button" type="button">取消</button>
-          <button class="primary-button" id="install-submit" value="default" type="submit">
-            <i data-lucide="download"></i><span>安装</span>
-          </button>
-        </div>
-      </form>
-    </dialog>
-
     <dialog class="workspace-dialog" id="editor-dialog">
       <div class="workspace-shell">
         <header class="workspace-header">
@@ -245,6 +223,12 @@
                 <span class="verdict-badge is-loading" id="audit-verdict-badge">检查中</span>
               </div>
               <p id="audit-summary">正在检查当前草稿。</p>
+            </section>
+
+            <section class="creation-preview" id="creation-preview" hidden aria-label="创建预览">
+              <span>创建位置</span>
+              <code id="creation-destination">等待有效名称</code>
+              <strong id="creation-state">正在检查</strong>
             </section>
 
             <section class="finding-section">
