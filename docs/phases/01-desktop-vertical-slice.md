@@ -2,8 +2,9 @@
 
 ## Status
 
-Implementation is complete and the unsigned local `.app` has been built. Phase
-acceptance awaits the project owner's native-window workflow verification.
+Accepted by the project owner on 2026-07-30 after native-window verification.
+The unsigned local `.app` opened successfully and the core workflow showed no
+blocking usability problems.
 
 ## Context
 

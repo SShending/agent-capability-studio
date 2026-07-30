@@ -2,13 +2,15 @@
 
 ## Current Position
 
-- Active phase: Phase 1 acceptance
+- Active phase: Phase 2 plan refinement
 - In-progress task: none
-- Last accepted milestone: product direction and v0.1 boundary in `INIT.md`
+- Last accepted milestone: Phase 1 native desktop vertical slice
 - Blocking decisions: none
 - Validation item: confirm the final minimum macOS version before public release
 
 ## Phase 1 - Native Desktop Vertical Slice
+
+Status: accepted by the project owner on 2026-07-30.
 
 Outcome: a Tauri 2 macOS application completes one real Codex workflow without
 the Node HTTP server: discover, inspect, edit, audit, compare, and guarded-save a
