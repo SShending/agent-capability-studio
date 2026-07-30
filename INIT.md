@@ -1,0 +1,182 @@
+# Agent Skill Studio
+
+## Status
+
+Accepted product brief. The product direction, v0.1 boundary, implementation
+order, and recommended technical direction were approved on 2026-07-30.
+
+## Goal
+
+Give non-programmers a local desktop workspace where they can understand,
+create, edit, audit, compare, and migrate Agent Skills without using a terminal
+or editing configuration files by hand.
+
+## Problem
+
+Agent Skills are plain files with powerful instructions, scripts, permissions,
+and trigger behavior. Existing tools help people discover, install, update, or
+scan them, but a non-programmer still struggles to answer basic questions:
+
+- What will this Skill do and when will it trigger?
+- What changed between the installed version, a draft, and an imported copy?
+- Which files, commands, network destinations, or credentials can it touch?
+- Can it be moved to another machine or Agent without breaking?
+- How can a new Skill be created safely without learning the file format?
+
+The product should make those questions understandable while preserving exact
+source, evidence, and user control.
+
+## First User
+
+The first user is the project owner, using Codex on macOS. They manage a growing
+personal Skill collection, want to move Skills to a server, and prefer a polished
+GUI over terminal commands. The interface must remain usable by people with no
+programming background.
+
+## Core Workflows
+
+1. Browse personal, disabled, system, plugin-managed, and archived Skills with
+   clear ownership and trigger-strategy labels.
+2. Open a personal Skill in guided or source mode, edit a draft, review findings
+   and exact differences, then explicitly save or discard it.
+3. Create a Skill through a guided flow for purpose, trigger behavior, workflow,
+   supporting files, and target Agent compatibility.
+4. Inspect a GitHub or local Skill candidate before installation; keep audit and
+   installation as separate user actions.
+5. Export user-controlled Skills as a manifest-and-hash bundle, then verify,
+   stage, compare, and explicitly install them on another machine.
+6. Understand compatibility and conflicts without modifying system or
+   plugin-managed Skills.
+
+## Success Evidence
+
+- A macOS user can install and open a signed desktop application without Node.js,
+  `npm`, or terminal setup.
+- A non-programmer can create or edit a valid Codex Skill and understand why it
+  triggers.
+- Every save or installation presents exact changes and relevant findings before
+  mutation.
+- Audit never installs, enables, deletes, or executes an untrusted Skill.
+- Concurrent edits are detected before overwrite; path traversal and unsafe
+  archive entries are rejected.
+- Export and import move eligible Skills between the local Mac and a server while
+  preserving file hashes and surfacing conflicts.
+- System and plugin-managed Skills remain read-only and excluded from export.
+- The normal workflow creates no persistent HTML reports or cleanup burden.
+
+## Constraints
+
+- Product: remain focused on Skill authoring, evidence, comparison, and migration;
+  do not become a general Agent configuration manager.
+- User experience: local GUI first, plain language, familiar macOS interaction,
+  advanced source and evidence available one level deeper.
+- Safety: distinguish evidence from guarantees; never label a Skill "safe" or
+  "secure". Show finding, severity, confidence, and exact evidence.
+- Agency: treat explicit-name and contextual intent triggers as valid strategies.
+  Never batch-rewrite trigger policy. Require confirmation for overwrites,
+  conflicts, installation, and findings needing manual review.
+- Filesystem: validate and contain every read, extraction, move, and write. Use
+  hashes for optimistic concurrency and atomic replacement for saved files.
+- Privacy: operate locally by default. Do not upload Skill contents, credentials,
+  audit results, or usage data without an explicit future feature and consent.
+- Reports: keep audit results ephemeral unless the user explicitly exports one.
+- Compatibility: implement Codex first behind an Agent compatibility seam; add
+  other Agents only after their contracts are tested.
+- License: release the project under MIT.
+
+## Non-Goals For The Initial Product
+
+- Rebuilding CC Switch installation, update, synchronization, shared-store, or
+  broad cross-Agent distribution features.
+- Building another general Skill/MCP security scanner.
+- Reimplementing MCP Inspector protocol testing and debugging.
+- Managing MCP, rules, plugins, hooks, automations, or runtime tool-call traces in
+  v0.1.
+- Supporting Claude Code, OpenClaw, Hermes, Windows, and Linux before the Codex
+  desktop workflow is stable.
+- Executing untrusted Skill scripts as part of an audit.
+- A hosted Skill marketplace, rankings, or cloud account system.
+
+## Existing Solutions
+
+Research was checked against current public project documentation during July
+2026. Recheck material claims before major scope expansion.
+
+- **CC Switch**: mature Tauri desktop management across Codex, Claude Code,
+  OpenCode, OpenClaw, Hermes, and others. It covers discovery, GitHub/ZIP install,
+  search, filtering, update detection, backup/restore, shared storage, and
+  distribution. Use or integrate it for those jobs rather than reproducing them.
+- **Vercel Skills CLI / skills.sh**: covers discovery, registry workflows,
+  installation, updates, and audit aggregation. It is not the target authoring
+  and explanation experience.
+- **MCPJam**: includes Skill discovery, upload, frontmatter validation, and
+  playground injection. Current evidence does not establish the same guided
+  non-programmer authoring, revision comparison, and migration workflow.
+- **Cisco AI Defense Skill Scanner** and **Snyk Agent Scan**: cover mature static
+  and Agent supply-chain scanning concerns. Integrate their evidence where useful;
+  do not recreate their engines.
+- **Official MCP Inspector**: owns interactive MCP server testing and debugging.
+  A future MCP assistant should launch or explain it, not clone it.
+
+## Defensible Differentiation
+
+Build a Skill Studio, not another package manager or scanner: guided authoring,
+plain-language evidence, exact revision comparison, explicit mutation gates, and
+portable migration for people who do not work directly with files. Existing
+tools can remain discovery, distribution, scanning, or debugging backends.
+
+## Current Starting Point
+
+- A localhost Node prototype scans Codex Skill locations and supports browse,
+  enable/disable, archive/restore, GitHub installation, guided/source editing,
+  deterministic baseline audit, diff display, and hash-guarded atomic save.
+- The interface has been redesigned toward a macOS desktop workspace, but it is
+  still a browser-delivered prototype and not a packaged desktop application.
+- The audit is intentionally a small baseline and must not be presented as a
+  replacement for a maintained security scanner.
+- The current stylesheet contains prototype history and should be consolidated
+  during the desktop migration rather than carried forward indefinitely.
+
+## Recommended Technical Direction
+
+- Package the product as a Tauri 2 desktop application, macOS first.
+- Reuse the current interaction model and visual language, but replace the Node
+  HTTP filesystem layer with typed Tauri commands; do not ship a hidden Node
+  server or require Node.js on the user's machine.
+- Keep filesystem discovery, containment, hashing, atomic writes, bundle parsing,
+  and adapter-specific placement in the Rust desktop core.
+- Keep presentation, guided authoring, evidence explanation, and comparison in a
+  web frontend hosted by the Tauri WebView.
+- Preserve the audit interface so deterministic built-in checks and optional
+  external scanner adapters return the same evidence model.
+- Prove the architecture with one end-to-end vertical slice before porting every
+  existing management action.
+
+## Proposed v0.1 Boundary
+
+1. Signed macOS Tauri application and local Codex discovery.
+2. Browse and inspect Skills with ownership and trigger-strategy labels.
+3. Guided/source editing, baseline audit, diff, guarded save, and discard.
+4. Guided creation of a new Codex Skill.
+5. Skill Bundle export, import verification/staging, conflict comparison, and
+   explicit installation.
+6. Optional launch or import of evidence from maintained scanners; no custom
+   full security engine.
+
+## Confirmed Decisions
+
+- Use Tauri 2 with macOS-first delivery; cross-platform support follows a stable
+  Codex desktop workflow.
+- Implement in this order: desktop vertical slice, guided creation, GitHub/local
+  candidate audit, then Skill Bundle import/export.
+- Keep GitHub and local candidate audit in v0.1.
+- Define an external-scanner adapter seam in v0.1 without requiring a scanner
+  integration or recreating a scanning engine.
+- Allow unsigned local development builds; sign and notarize the public v0.1
+  release.
+- Exclude credentials from Skill Bundles and do not add bundle encryption in
+  v0.1.
+- Use `Agent Skill Studio` as the product name and `agent-skill-studio` as the
+  repository name.
+- Target macOS 13 or later provisionally; verify the final minimum against Tauri,
+  WebKit, signing, and tested feature requirements before release.

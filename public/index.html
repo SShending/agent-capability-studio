@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="skill-center-token" content="__SKILL_CENTER_TOKEN__" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Agent Skill Studio</title>
+    <link rel="stylesheet" href="/styles.css?v=4" />
+    <script src="/vendor/lucide.js" defer></script>
+    <script src="/app.js?v=4" defer></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Skill 分类">
+        <div class="brand-block" data-tauri-drag-region>
+          <div class="brand-mark" aria-hidden="true"><i data-lucide="blocks"></i></div>
+          <div>
+            <div class="brand-name">Skill Studio</div>
+            <div class="local-status"><span></span>仅本机</div>
+          </div>
+        </div>
+
+        <div class="nav-label">资料库</div>
+        <nav class="source-nav" id="source-nav">
+          <button class="source-item is-active" type="button" data-source="all" aria-pressed="true">
+            <i data-lucide="library"></i><span>所有技能</span><strong id="count-all">0</strong>
+          </button>
+          <button class="source-item" type="button" data-source="personal" aria-pressed="false">
+            <i data-lucide="user-round"></i><span>个人</span><strong id="count-personal">0</strong>
+          </button>
+          <button class="source-item" type="button" data-source="disabled" aria-pressed="false">
+            <i data-lucide="circle-pause"></i><span>已停用</span><strong id="count-disabled">0</strong>
+          </button>
+          <button class="source-item" type="button" data-source="system" aria-pressed="false">
+            <i data-lucide="shield"></i><span>系统</span><strong id="count-system">0</strong>
+          </button>
+          <button class="source-item" type="button" data-source="plugin" aria-pressed="false">
+            <i data-lucide="blocks"></i><span>插件</span><strong id="count-plugin">0</strong>
+          </button>
+          <button class="source-item" type="button" data-source="archive" aria-pressed="false">
+            <i data-lucide="archive"></i><span>归档</span><strong id="count-archive">0</strong>
+          </button>
+        </nav>
+
+        <div class="sidebar-section">
+          <div class="section-label">健康状况</div>
+          <div class="audit-status" id="audit-status">
+            <span class="audit-indicator"></span>
+            <span id="audit-label">正在检查</span>
+          </div>
+        </div>
+
+        <div class="sidebar-footer" title="Codex Skills 位置">
+          <i data-lucide="hard-drive"></i>
+          <div>
+            <span>Codex Home</span>
+            <code id="codex-home">~/.codex</code>
+          </div>
+        </div>
+      </aside>
+
+      <main class="main-content">
+        <header class="topbar" data-tauri-drag-region>
+          <div>
+            <h1>技能库</h1>
+            <p id="result-summary">正在读取...</p>
+          </div>
+          <div class="topbar-actions">
+            <button class="icon-button" id="refresh-button" type="button" aria-label="刷新" title="刷新">
+              <i data-lucide="refresh-cw"></i>
+            </button>
+            <button class="icon-button accent-button" id="install-button" type="button" aria-label="安装 Skill" title="安装 Skill">
+              <i data-lucide="plus"></i>
+            </button>
+          </div>
+        </header>
+
+        <section class="toolbar" aria-label="筛选工具">
+          <label class="search-field">
+            <i data-lucide="search"></i>
+            <input id="search-input" type="search" placeholder="搜索名称或描述" autocomplete="off" />
+          </label>
+          <div class="sort-control" title="排序方式">
+            <i data-lucide="arrow-up-down"></i>
+            <label class="sr-only" for="sort-select">排序</label>
+            <select id="sort-select">
+              <option value="source">来源</option>
+              <option value="name">名称</option>
+              <option value="updated">最近更新</option>
+            </select>
+          </div>
+        </section>
+
+        <section class="skill-list-region" aria-live="polite">
+          <div class="list-header" aria-hidden="true">
+            <span>Skill</span><span>来源</span><span>触发规则</span><span>文件</span>
+          </div>
+          <div class="skill-list" id="skill-list"></div>
+          <div class="empty-state" id="empty-state" hidden>
+            <div class="empty-grid" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+            <h2>没有匹配的 Skill</h2>
+            <p>调整搜索或来源筛选。</p>
+          </div>
+        </section>
+      </main>
+
+      <aside class="detail-panel" id="detail-panel" aria-label="Skill 详情">
+        <div class="detail-empty" id="detail-empty">
+          <i data-lucide="mouse-pointer-2"></i>
+          <p>选择一个 Skill</p>
+        </div>
+        <div class="detail-content" id="detail-content" hidden>
+          <div class="inspector-label">检查器</div>
+          <div class="detail-header">
+            <button class="icon-button mobile-only" id="close-detail-button" type="button" aria-label="关闭详情" title="关闭详情">
+              <i data-lucide="x"></i>
+            </button>
+            <div class="detail-icon" id="detail-icon"></div>
+            <div class="detail-title-wrap">
+              <div class="detail-source" id="detail-source"></div>
+              <h2 id="detail-title"></h2>
+            </div>
+          </div>
+
+          <p class="detail-description" id="detail-description"></p>
+
+          <div class="detail-actions" id="detail-actions"></div>
+
+          <dl class="metadata-list">
+            <div><dt>状态</dt><dd id="detail-state"></dd></div>
+            <div><dt>触发规则</dt><dd id="detail-trigger"></dd></div>
+            <div><dt>文件数</dt><dd id="detail-files"></dd></div>
+            <div><dt>最近修改</dt><dd id="detail-updated"></dd></div>
+          </dl>
+
+          <div class="path-block">
+            <div class="section-label">位置</div>
+            <div class="path-row">
+              <code id="detail-path"></code>
+              <button class="icon-button compact" id="copy-path-button" type="button" aria-label="复制路径" title="复制路径">
+                <i data-lucide="copy"></i>
+              </button>
+            </div>
+          </div>
+
+          <details class="skill-file">
+            <summary>SKILL.md</summary>
+            <pre id="detail-markdown"></pre>
+          </details>
+        </div>
+      </aside>
+    </div>
+
+    <dialog class="modal" id="install-dialog">
+      <form method="dialog" class="modal-shell" id="install-form">
+        <div class="modal-header">
+          <div><span class="modal-kicker">GitHub</span><h2>安装 Skill</h2></div>
+          <button class="icon-button" id="close-install-button" type="button" aria-label="关闭" title="关闭">
+            <i data-lucide="x"></i>
+          </button>
+        </div>
+        <div class="form-grid">
+          <label><span>仓库</span><input name="repo" placeholder="owner/repo" required /></label>
+          <label><span>分支或标签</span><input name="ref" value="main" required /></label>
+          <label class="full"><span>Skill 目录</span><input name="path" placeholder="skills/example" required /></label>
+        </div>
+        <div class="modal-footer">
+          <button class="secondary-button" id="cancel-install-button" type="button">取消</button>
+          <button class="primary-button" id="install-submit" value="default" type="submit">
+            <i data-lucide="download"></i><span>安装</span>
+          </button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="workspace-dialog" id="editor-dialog">
+      <div class="workspace-shell">
+        <header class="workspace-header">
+          <div class="workspace-title">
+            <button class="icon-button" id="close-editor-button" type="button" aria-label="关闭编辑器" title="关闭">
+              <i data-lucide="x"></i>
+            </button>
+            <div>
+              <span class="workspace-kicker">Skill 草稿</span>
+              <h2 id="editor-title">编辑 Skill</h2>
+            </div>
+            <span class="draft-status" id="draft-status">未修改</span>
+          </div>
+          <div class="workspace-actions">
+            <button class="secondary-button" id="audit-draft-button" type="button">
+              <i data-lucide="scan-search"></i><span>重新检查</span>
+            </button>
+            <button class="primary-button" id="save-draft-button" type="button" disabled>
+              <i data-lucide="save"></i><span>保存修改</span>
+            </button>
+          </div>
+        </header>
+
+        <div class="workspace-body">
+          <section class="editor-pane" aria-label="Skill 编辑器">
+            <div class="editor-toolbar">
+              <div class="segmented-control" role="tablist" aria-label="编辑方式">
+                <button class="is-active" id="guided-mode-button" type="button" role="tab" aria-selected="true">
+                  <i data-lucide="list-checks"></i><span>引导编辑</span>
+                </button>
+                <button id="source-mode-button" type="button" role="tab" aria-selected="false">
+                  <i data-lucide="code-2"></i><span>源码</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="guided-editor" id="guided-editor">
+              <label class="editor-field compact-field">
+                <span>Skill 名称</span>
+                <input id="draft-name" type="text" readonly />
+              </label>
+              <label class="editor-field description-field">
+                <span>用途与触发条件</span>
+                <textarea id="draft-description" spellcheck="false"></textarea>
+              </label>
+              <label class="editor-field instruction-field">
+                <span>工作步骤</span>
+                <textarea id="draft-body" spellcheck="false"></textarea>
+              </label>
+            </div>
+
+            <div class="source-editor" id="source-editor" hidden>
+              <textarea id="draft-source" aria-label="SKILL.md 源码" spellcheck="false"></textarea>
+            </div>
+          </section>
+
+          <aside class="review-pane" aria-label="草稿检查结果">
+            <section class="verdict-section">
+              <div class="review-heading">
+                <div>
+                  <span>检查结论</span>
+                  <h3 id="audit-verdict">等待检查</h3>
+                </div>
+                <span class="verdict-badge is-loading" id="audit-verdict-badge">检查中</span>
+              </div>
+              <p id="audit-summary">正在检查当前草稿。</p>
+            </section>
+
+            <section class="finding-section">
+              <div class="review-section-title">
+                <span>发现与证据</span><strong id="finding-count">0</strong>
+              </div>
+              <div class="finding-list" id="finding-list"></div>
+            </section>
+
+            <section class="diff-section">
+              <div class="review-section-title">
+                <span>版本差异</span><strong id="diff-count">0</strong>
+              </div>
+              <div class="diff-empty" id="diff-empty">尚未修改</div>
+              <div class="diff-view" id="diff-view" hidden>
+                <div class="diff-column removed">
+                  <span>修改前</span>
+                  <pre id="diff-before"></pre>
+                </div>
+                <div class="diff-column added">
+                  <span>草稿</span>
+                  <pre id="diff-after"></pre>
+                </div>
+              </div>
+            </section>
+          </aside>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog class="modal compact-modal" id="confirm-dialog">
+      <form method="dialog" class="modal-shell" id="confirm-form">
+        <div class="confirm-icon"><i data-lucide="circle-alert"></i></div>
+        <h2 id="confirm-title">确认操作</h2>
+        <p id="confirm-message"></p>
+        <div class="modal-footer">
+          <button class="secondary-button" id="cancel-confirm-button" type="button">取消</button>
+          <button class="danger-button" id="confirm-submit" value="default" type="submit">确认</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div class="toast" id="toast" role="status" aria-live="polite" hidden>
+      <i data-lucide="circle-check"></i><span id="toast-message"></span>
+    </div>
+  </body>
+</html>

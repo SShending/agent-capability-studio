@@ -1,0 +1,29 @@
+# JavaScript dependencies and build output
+node_modules/
+dist/
+coverage/
+
+# Tauri and Rust build output
+src-tauri/target/
+target/
+
+# Generated visual QA artifacts and local application state
+outputs/
+work/
+.agent-skill-studio/
+
+# Local signing and release material
+*.p12
+*.p8
+*.cer
+*.mobileprovision
+*.provisionprofile
+*.key
+.env
+.env.*
+!.env.example
+
+# macOS and editor noise
+.DS_Store
+.idea/
+.vscode/
