@@ -489,9 +489,9 @@ function renderFinding(item) {
 function renderDraftAudit(audit) {
   const verdicts = {
     clear: {
-      title: "未发现阻断项",
+      title: "基础检查未发现已知阻断模式",
       badge: "可继续",
-      summary: "基础规则未命中问题；这不是绝对安全保证。"
+      summary: "仅表示内置规则没有命中；不代表 Skill 已通过完整安全审计。"
     },
     review: {
       title: "需要人工复核",

@@ -85,6 +85,9 @@ and open-source implementations before recommending or implementing it.
 - Never label a Skill or Audit Result as "safe" or "secure". Present evidence,
   severity, confidence, and exact versions or hashes.
 - Keep system and plugin-managed Skills read-only and exclude them from export.
+- Restrict lifecycle mutation to user-controlled Skills. Permanent deletion is
+  allowed only from archive after exact destructive confirmation; disable,
+  enable, archive, restore, and delete must never overwrite a destination.
 - Bundle Import verifies and stages content; it does not install content.
 - Exclude credentials and secrets from bundles. v0.1 bundles are not encrypted.
 - Reject path traversal, unsafe archive entries, containment escapes, and
@@ -103,8 +106,9 @@ and open-source implementations before recommending or implementing it.
   hashes, and evidence available one level deeper.
 - Follow familiar macOS hierarchy, interaction, accessibility, reduced-motion,
   reduced-transparency, and dark-mode behavior.
-- Require explicit confirmation for installation, overwrites, conflicts, and
-  findings that require manual review.
+- Require explicit confirmation for installation, lifecycle mutations,
+  permanent deletion, overwrites, conflicts, and findings that require manual
+  review.
 - Do not generate persistent HTML reports unless the user explicitly exports one.
 
 ## Engineering

@@ -1,10 +1,12 @@
-# Phase 2: Guided Skill Creation
+# Phase 2: Guided Skill Creation And Personal Lifecycle
 
 ## Status
 
-Task 2.1 was accepted by the project owner on 2026-07-30. Task 2.2 is
-complete; the current creation command accepts Markdown only. Supporting-file
-authoring remains a later capability and is not silently accepted or written.
+Task 2.1 was accepted by the project owner on 2026-07-30. Tasks 2.2, 2.3, and
+2.5 are complete, Task 2.6 is in progress, and Task 2.4 is pending as the
+unified acceptance pass after Task 2.6. The
+current creation command accepts Markdown only. Supporting-file authoring
+remains a later capability and is not silently accepted or written.
 
 ## Context
 
@@ -85,11 +87,14 @@ instructions differently, so the editor must derive its form from each
 ### Task 2.4 - Usability And Recovery Verification
 
 - Status: pending
-- Outcome: first-time and error-recovery scenarios pass in the native app.
+- Outcome: first-time creation, safety explanation, lifecycle mutation, and
+  error-recovery scenarios pass together in the native app.
+- Dependencies: complete Tasks 2.5 and 2.6 before asking the project owner to
+  repeat acceptance.
 
 ### Task 2.5 - Safety Evidence Hardening
 
-- Status: pending
+- Status: completed
 - Outcome: editing and creation expose a truthful, higher-signal safety baseline
   without presenting the Studio as a complete security scanner.
 - Details:
@@ -120,6 +125,49 @@ instructions differently, so the editor must derive its form from each
   from “safe”, understand why a finding fired, and identify what requires manual
   judgment or an external scanner.
 
+### Task 2.6 - Guarded Personal Skill Lifecycle
+
+- Status: in progress
+- Outcome: a user can disable, re-enable, archive, restore, and permanently
+  delete personal Skills without using Finder or the terminal.
+- State transitions:
+  - personal to disabled or archive;
+  - disabled to personal or archive;
+  - archive to personal, or permanent deletion;
+  - system and plugin sources have no lifecycle mutation interface.
+- Interface:
+  - a side-effect-free preview returns the action, source, destination, exact
+    directory revision, conflicts, and whether the transition can proceed;
+  - the apply command repeats containment, ownership, revision, and conflict
+    checks immediately before mutation;
+  - permanent deletion uses a separate command, accepts archived Skills only,
+    and requires an exact-name destructive confirmation.
+- Mutation rules:
+  - derive every source and destination from the Skill ID and managed roots;
+    never accept a frontend filesystem path;
+  - calculate the revision from the complete Skill directory, including
+    supporting files, rather than hashing only `SKILL.md`;
+  - use same-filesystem rename semantics for state moves and never overwrite or
+    silently fall back to copy-then-delete;
+  - restore archived Skills to the active personal root and show that destination
+    before confirmation;
+  - reject symlink escapes and concurrent directory changes; a failed action
+    leaves the original Skill intact;
+  - keep audit, lifecycle preview, lifecycle confirmation, and permanent-delete
+    confirmation as distinct actions.
+- Affected files: Rust workspace types and commands, directory revision and
+  containment tests, the typed desktop bridge, detail-panel actions,
+  confirmation UI, and lifecycle documentation.
+- Dependencies: Task 2.5 wording and evidence semantics must be settled before
+  introducing destructive controls.
+- Automated verification: tests cover every valid transition, wrong-source
+  rejection, destination conflicts, stale directory revisions, nested files,
+  symlinks, failed renames, cancellation without mutation, exact-name delete
+  confirmation, and permanent deletion restricted to archive.
+- Human verification: disable and re-enable a disposable Skill; archive and
+  restore it; verify conflict recovery; permanently delete it from archive and
+  confirm that no delete control appears for active, system, or plugin Skills.
+
 ## Risks And Mitigations
 
 - Markdown normalization: patch source ranges instead of serializing the full
@@ -132,6 +180,10 @@ instructions differently, so the editor must derive its form from each
   checks to deterministic structure and high-signal evidence.
 - False positives: require benign, negated, and explanatory fixtures before a
   rule can become a blocker.
+- Destructive lifecycle actions: expose archive as the normal removal path and
+  permanent deletion only inside archive with exact confirmation.
+- Directory races: hash the full directory at preview and repeat ownership,
+  containment, revision, and destination checks immediately before mutation.
 
 ## Acceptance Record
 
@@ -147,5 +199,13 @@ instructions differently, so the editor must derive its form from each
   Rust, and production-build checks passed; Tauri development window launched.
 - Task 2.5: added by the project owner after reviewing the current baseline and
   finding its blocker coverage too weak for the intended safety experience.
-- Remaining Phase 2 tasks: 2.4 usability/recovery verification and 2.5 safety
-  evidence hardening.
+- Task 2.5: completed on 2026-07-30 after current Cisco and Snyk scanner
+  capabilities were revalidated, deterministic safety checks were separated
+  into a local audit module, and benign/adversarial fixtures plus the full
+  frontend and Rust checks passed.
+- Task 2.6: added by the project owner to complete the personal Skill lifecycle
+  without reproducing CC Switch distribution or synchronization features.
+- Task 2.4: its first pass exposed the missing delete workflow, so the project
+  owner moved unified acceptance after Tasks 2.5 and 2.6.
+- Remaining execution order: complete 2.6 guarded personal Skill lifecycle,
+  then run 2.4 unified acceptance.

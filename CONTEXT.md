@@ -60,6 +60,32 @@ A user-controlled Skill eligible for migration. Codex-managed system Skills and
 plugin-managed Skills are not Exportable Skills.
 _Avoid_: Every installed Skill
 
+### Personal Skill lifecycle
+
+**Lifecycle Action**:
+An explicit user decision that moves a user-controlled Skill between personal,
+disabled, and archive states without changing its contents.
+_Avoid_: Audit, installation, automatic cleanup
+
+**Disabled Skill**:
+A user-controlled Skill retained locally outside the active personal scope, so
+new Agent tasks do not load it.
+_Avoid_: Deleted Skill, archived Skill
+
+**Archived Skill**:
+A user-controlled Skill removed from active and disabled scopes but retained for
+restoration or permanent deletion.
+_Avoid_: Disabled Skill, backup
+
+**Restore**:
+A Lifecycle Action that returns an Archived Skill to the active personal scope.
+_Avoid_: Bundle Import, installation
+
+**Permanent Deletion**:
+The irreversible removal of an Archived Skill after an exact destructive
+confirmation. It is never an Audit outcome or an automatic action.
+_Avoid_: Archive, disable, cleanup
+
 
 **Bundle Import**:
 Verification and staging of a Skill Bundle on a target environment. Bundle

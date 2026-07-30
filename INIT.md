@@ -46,7 +46,9 @@ programming background.
    installation as separate user actions.
 5. Export user-controlled Skills as a manifest-and-hash bundle, then verify,
    stage, compare, and explicitly install them on another machine.
-6. Understand compatibility and conflicts without modifying system or
+6. Disable, re-enable, archive, restore, or permanently delete personal Skills
+   through explicit, conflict-aware lifecycle actions.
+7. Understand compatibility and conflicts without modifying system or
    plugin-managed Skills.
 
 ## Success Evidence
@@ -63,6 +65,9 @@ programming background.
 - Export and import move eligible Skills between the local Mac and a server while
   preserving file hashes and surfacing conflicts.
 - System and plugin-managed Skills remain read-only and excluded from export.
+- Personal Skill lifecycle actions never overwrite another directory; permanent
+  deletion is available only from archive after an explicit destructive
+  confirmation.
 - The normal workflow creates no persistent HTML reports or cleanup burden.
 
 ## Constraints
