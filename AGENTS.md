@@ -92,8 +92,9 @@ and open-source implementations before recommending or implementing it.
 - Exclude credentials and secrets from bundles. v0.1 bundles are not encrypted.
 - Reject path traversal, unsafe archive entries, containment escapes, and
   unsupported symlink writes.
-- Use content hashes for concurrent-edit detection and atomic replacement for
-  writes.
+- Use content hashes for draft concurrency, complete-directory revisions for
+  lifecycle concurrency, and atomic replacement or same-filesystem rename for
+  writes and state moves.
 - Do not execute untrusted Skill scripts during acquisition, import, or audit.
 - Keep Skill contents, audit evidence, and usage data local unless a future
   explicitly approved feature states otherwise.

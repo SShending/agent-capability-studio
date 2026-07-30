@@ -6,5 +6,10 @@ export const desktop = {
   auditDraft: (id, markdown) => invoke("audit_draft", { id, markdown }),
   saveDraft: (id, markdown, expectedHash) => invoke("save_draft", { id, markdown, expectedHash }),
   previewNewSkill: (markdown) => invoke("preview_new_skill", { markdown }),
-  createSkill: (markdown, expectedDraftHash) => invoke("create_skill", { markdown, expectedDraftHash })
+  createSkill: (markdown, expectedDraftHash) => invoke("create_skill", { markdown, expectedDraftHash }),
+  previewSkillLifecycle: (id, action) => invoke("preview_skill_lifecycle", { id, action }),
+  applySkillLifecycle: (id, action, expectedDirectoryRevision) =>
+    invoke("apply_skill_lifecycle", { id, action, expectedDirectoryRevision }),
+  deleteArchivedSkill: (id, expectedDirectoryRevision, confirmationName) =>
+    invoke("delete_archived_skill", { id, expectedDirectoryRevision, confirmationName })
 };

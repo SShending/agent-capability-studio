@@ -18,6 +18,7 @@ const state = {
   editor: null,
   auditSequence: 0,
   confirmAction: null,
+  confirmRequiredName: null,
   toastTimer: null
 };
 
@@ -34,6 +35,8 @@ const elements = {
   confirmTitle: document.querySelector("#confirm-title"),
   confirmMessage: document.querySelector("#confirm-message"),
   confirmSubmit: document.querySelector("#confirm-submit"),
+  confirmNameField: document.querySelector("#confirm-name-field"),
+  confirmName: document.querySelector("#confirm-name"),
   detailPanel: document.querySelector("#detail-panel"),
   detailEmpty: document.querySelector("#detail-empty"),
   detailContent: document.querySelector("#detail-content"),
@@ -275,7 +278,19 @@ function renderDetail() {
   actions.replaceChildren();
   if (skill.source === "personal") {
     actions.append(
-      actionButton("编辑", "square-pen", "primary-button", () => openEditor(skill.id))
+      actionButton("编辑", "square-pen", "primary-button", () => openEditor(skill.id)),
+      actionButton("停用", "circle-pause", "secondary-button", () => requestSkillLifecycle("disable", skill)),
+      actionButton("归档", "archive", "secondary-button", () => requestSkillLifecycle("archive", skill))
+    );
+  } else if (skill.source === "disabled") {
+    actions.append(
+      actionButton("重新启用", "circle-play", "primary-button", () => requestSkillLifecycle("enable", skill)),
+      actionButton("归档", "archive", "secondary-button", () => requestSkillLifecycle("archive", skill))
+    );
+  } else if (skill.source === "archive") {
+    actions.append(
+      actionButton("恢复", "archive-restore", "primary-button", () => requestSkillLifecycle("restore", skill)),
+      actionButton("永久删除", "trash-2", "danger-button", () => requestSkillLifecycle("delete", skill))
     );
   } else {
     const readonly = document.createElement("span");
@@ -284,6 +299,20 @@ function renderDetail() {
     actions.append(readonly);
   }
   refreshIcons();
+}
+
+function presentConfirmation({ title, message, label, action, tone = "danger", requiredName = null }) {
+  state.confirmAction = action;
+  state.confirmRequiredName = requiredName;
+  elements.confirmTitle.textContent = title;
+  elements.confirmMessage.textContent = message;
+  elements.confirmSubmit.textContent = label;
+  elements.confirmSubmit.className = tone === "primary" ? "primary-button" : "danger-button";
+  elements.confirmNameField.hidden = !requiredName;
+  elements.confirmName.value = "";
+  elements.confirmName.placeholder = requiredName || "";
+  elements.confirmSubmit.disabled = Boolean(requiredName);
+  elements.confirmDialog.showModal();
 }
 
 function setEditorMode(mode) {
@@ -655,24 +684,25 @@ function requestDraftSave() {
   if (!state.editor?.audit || state.editor.audit.verdict === "block") return;
   if (state.editor.isNew) {
     if (!state.editor.preview?.canCreate) return;
-    state.confirmAction = performDraftCreate;
-    elements.confirmTitle.textContent = "创建新 Skill";
-    elements.confirmMessage.textContent = `将在 ${state.editor.preview.destination} 创建 SKILL.md。`;
-    elements.confirmSubmit.textContent = "确认创建";
-    elements.confirmSubmit.className = "primary-button";
-    elements.confirmDialog.showModal();
+    presentConfirmation({
+      title: "创建新 Skill",
+      message: `将在 ${state.editor.preview.destination} 创建 SKILL.md。`,
+      label: "确认创建",
+      action: performDraftCreate,
+      tone: "primary"
+    });
     return;
   }
   if (state.editor.audit.verdict === "clear") {
     performDraftSave();
     return;
   }
-  state.confirmAction = performDraftSave;
-  elements.confirmTitle.textContent = "保存需要复核的草稿";
-  elements.confirmMessage.textContent = "检查发现了需要人工复核的行为。确认这些行为符合预期后再保存。";
-  elements.confirmSubmit.textContent = "确认保存";
-  elements.confirmSubmit.className = "danger-button";
-  elements.confirmDialog.showModal();
+  presentConfirmation({
+    title: "保存需要复核的草稿",
+    message: "检查发现了需要人工复核的行为。确认这些行为符合预期后再保存。",
+    label: "确认保存",
+    action: performDraftSave
+  });
 }
 
 function requestCloseEditor() {
@@ -681,36 +711,57 @@ function requestCloseEditor() {
     state.editor = null;
     return;
   }
-  state.confirmAction = async () => {
-    elements.editorDialog.close();
-    state.editor = null;
-  };
-  elements.confirmTitle.textContent = "放弃未保存修改";
-  elements.confirmMessage.textContent = "关闭后，这次草稿修改不会保留。";
-  elements.confirmSubmit.textContent = "放弃修改";
-  elements.confirmDialog.showModal();
+  presentConfirmation({
+    title: "放弃未保存修改",
+    message: "关闭后，这次草稿修改不会保留。",
+    label: "放弃修改",
+    action: async () => {
+      elements.editorDialog.close();
+      state.editor = null;
+    }
+  });
 }
 
-function confirmSkillAction(action, skill) {
+async function requestSkillLifecycle(action, skill) {
   const config = {
-    toggle: skill.source === "personal"
-      ? ["停用 Skill", `停用 ${skill.displayName}？新任务将不再加载它。`, "停用"]
-      : ["启用 Skill", `重新启用 ${skill.displayName}？`, "启用"],
-    archive: ["归档 Skill", `将 ${skill.displayName} 移入可恢复归档？`, "归档"],
-    restore: ["恢复 Skill", `将 ${skill.displayName} 恢复到个人 Skill？`, "恢复"]
+    disable: ["停用 Skill", `停用 ${skill.displayName}？新任务将不再加载它。`, "确认停用", "primary"],
+    enable: ["重新启用 Skill", `将 ${skill.displayName} 恢复到个人 Skill？`, "确认启用", "primary"],
+    archive: ["归档 Skill", `将 ${skill.displayName} 移入可恢复归档？`, "确认归档", "primary"],
+    restore: ["恢复 Skill", `将 ${skill.displayName} 恢复到启用的个人 Skill？`, "确认恢复", "primary"],
+    delete: ["永久删除 Skill", `永久删除 ${skill.displayName} 及其全部文件？此操作无法撤销。`, "永久删除", "danger"]
   }[action];
-  state.confirmAction = async () => {
-    await api(`/api/skills/${encodeURIComponent(skill.id)}/${action}`, { method: "POST", body: "{}" });
-    showToast(`${config[2]}完成。请在新任务中使用最新状态。`);
-    state.selectedId = null;
-    state.detail = null;
-    elements.detailPanel.classList.remove("is-open");
-    await loadSkills();
-  };
-  elements.confirmTitle.textContent = config[0];
-  elements.confirmMessage.textContent = config[1];
-  elements.confirmSubmit.textContent = config[2];
-  elements.confirmDialog.showModal();
+  try {
+    const preview = await desktop.previewSkillLifecycle(skill.id, action);
+    if (!preview.canApply) {
+      showToast(`目标位置已有同名目录：${preview.conflict?.path || preview.destination}`, true);
+      return;
+    }
+    const apply = action === "delete"
+      ? async () => {
+        await desktop.deleteArchivedSkill(skill.id, preview.directoryRevision, elements.confirmName.value);
+        state.selectedId = null;
+        state.detail = null;
+        elements.detailPanel.classList.remove("is-open");
+        await loadSkills({ preserveSelection: false });
+        showToast(`${skill.displayName} 已永久删除。`);
+      }
+      : async () => {
+        const result = await desktop.applySkillLifecycle(skill.id, action, preview.directoryRevision);
+        await loadSkills({ preserveSelection: false });
+        await selectSkill(result.id);
+        showToast(`${config[2].replace("确认", "")}完成。请在新任务中使用最新状态。`);
+      };
+    presentConfirmation({
+      title: config[0],
+      message: `${config[1]}${preview.destination ? `\n目标位置：${preview.destination}` : ""}`,
+      label: config[2],
+      action: apply,
+      tone: config[3],
+      requiredName: action === "delete" ? skill.name : null
+    });
+  } catch (error) {
+    showToast(error.message, true);
+  }
 }
 
 function showToast(message, isError = false) {
@@ -813,7 +864,13 @@ elements.draftSource.addEventListener("input", () => {
 });
 document.querySelector("#cancel-confirm-button").addEventListener("click", () => {
   state.confirmAction = null;
+  state.confirmRequiredName = null;
   elements.confirmDialog.close();
+});
+elements.confirmName.addEventListener("input", () => {
+  elements.confirmSubmit.disabled = Boolean(
+    state.confirmRequiredName && elements.confirmName.value !== state.confirmRequiredName
+  );
 });
 
 document.querySelector("#copy-path-button").addEventListener("click", async () => {
@@ -831,10 +888,12 @@ elements.confirmForm.addEventListener("submit", async (event) => {
     await state.confirmAction();
     elements.confirmDialog.close();
   } catch (error) {
+    elements.confirmDialog.close();
     showToast(error.message, true);
   } finally {
     elements.confirmSubmit.disabled = false;
     state.confirmAction = null;
+    state.confirmRequiredName = null;
   }
 });
 

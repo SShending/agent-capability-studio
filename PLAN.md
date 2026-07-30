@@ -3,7 +3,7 @@
 ## Current Position
 
 - Active phase: Phase 2 implementation
-- In-progress task: 2.6 Implement guarded personal Skill lifecycle actions
+- In-progress task: 2.4 Run unified creation, safety, lifecycle, and recovery acceptance
 - Last accepted milestone: Phase 1 native desktop vertical slice
 - Blocking decisions: none
 - Validation item: confirm the final minimum macOS version before public release
@@ -63,9 +63,9 @@ Tasks:
 - [x] 2.1 Define the Skill Draft document model and heading-aware form flow.
 - [x] 2.2 Implement safe Rust creation commands and collision handling.
 - [x] 2.3 Add draft preview, audit, confirmation, and post-create navigation.
-- [ ] 2.4 Run unified creation, safety, lifecycle, and recovery acceptance after Tasks 2.5 and 2.6.
+- [ ] 2.4 Run unified creation, safety, lifecycle, and recovery acceptance after Tasks 2.5 and 2.6. (in progress)
 - [x] 2.5 Harden built-in safety evidence and validate scanner integration options.
-- [ ] 2.6 Implement guarded personal Skill lifecycle actions. (in progress)
+- [x] 2.6 Implement guarded personal Skill lifecycle actions.
 
 ## Phase 3 - GitHub And Local Candidate Audit
 

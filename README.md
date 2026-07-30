@@ -25,9 +25,13 @@ The shipped application does not start a Node HTTP server or require Node.js.
 - Discover personal, disabled, system, plugin-managed, and archived Codex Skills.
 - Edit personal Skills through a guided form or the `SKILL.md` source.
 - Inspect draft structure, trigger scope, high-impact commands, network access,
-  sensitive-data signals, and exact changes before saving.
+  sensitive-data signals, command execution, persistence, dependency installs,
+  encoded payloads, and exact changes before saving.
 - Require explicit confirmation before saving findings that need manual review.
 - Prevent stale drafts from overwriting a Skill changed elsewhere.
+- Disable, re-enable, archive, and restore personal Skills without overwriting
+  destination directories.
+- Permanently delete only archived Skills after typing the exact Skill name.
 - Keep system and plugin-managed Skills read-only.
 
 Audit results are evidence-based findings, not a security certificate or an

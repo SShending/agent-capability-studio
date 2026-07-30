@@ -2,8 +2,8 @@ mod skills;
 
 use serde::Serialize;
 use skills::{
-    AuditResult, Catalog, CreateSkillResult, NewSkillPreview, SkillDetail, Workspace,
-    WorkspaceError,
+    AuditResult, Catalog, CreateSkillResult, DeleteSkillResult, LifecyclePreview, LifecycleResult,
+    NewSkillPreview, SkillDetail, Workspace, WorkspaceError,
 };
 use tauri::State;
 
@@ -77,6 +77,44 @@ fn create_skill(
         .map_err(Into::into)
 }
 
+#[tauri::command]
+fn preview_skill_lifecycle(
+    id: String,
+    action: String,
+    state: State<'_, AppState>,
+) -> Result<LifecyclePreview, CommandError> {
+    state
+        .0
+        .preview_skill_lifecycle(&id, &action)
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+fn apply_skill_lifecycle(
+    id: String,
+    action: String,
+    expected_directory_revision: String,
+    state: State<'_, AppState>,
+) -> Result<LifecycleResult, CommandError> {
+    state
+        .0
+        .apply_skill_lifecycle(&id, &action, &expected_directory_revision)
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+fn delete_archived_skill(
+    id: String,
+    expected_directory_revision: String,
+    confirmation_name: String,
+    state: State<'_, AppState>,
+) -> Result<DeleteSkillResult, CommandError> {
+    state
+        .0
+        .delete_archived_skill(&id, &expected_directory_revision, &confirmation_name)
+        .map_err(Into::into)
+}
+
 pub fn run() {
     tauri::Builder::default()
         .manage(AppState(Workspace::from_environment()))
@@ -86,7 +124,10 @@ pub fn run() {
             audit_draft,
             save_draft,
             preview_new_skill,
-            create_skill
+            create_skill,
+            preview_skill_lifecycle,
+            apply_skill_lifecycle,
+            delete_archived_skill
         ])
         .run(tauri::generate_context!())
         .expect("error while running Agent Skill Studio");

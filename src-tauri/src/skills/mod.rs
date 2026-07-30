@@ -1,4 +1,7 @@
 mod audit;
+mod lifecycle;
+
+pub use lifecycle::{DeleteSkillResult, LifecyclePreview, LifecycleResult};
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use chrono::{DateTime, Utc};
@@ -34,6 +37,14 @@ pub enum WorkspaceError {
     PreviewMismatch,
     #[error("A Skill named {name} already exists in the {source_label} source.")]
     NameConflict { name: String, source_label: String },
+    #[error("This Skill lifecycle action is not recognized.")]
+    InvalidLifecycleAction,
+    #[error("This lifecycle action is not allowed for the Skill's current source.")]
+    LifecycleNotAllowed,
+    #[error("This Skill directory changed after preview. Review the action again.")]
+    DirectoryChanged,
+    #[error("Type the exact archived Skill name to confirm permanent deletion.")]
+    DeleteConfirmationMismatch,
     #[error("Resolve blocking findings before saving.")]
     Blocked,
     #[error("Editing linked or escaped Skill files is not supported.")]
@@ -51,6 +62,10 @@ impl WorkspaceError {
             Self::Conflict => "STALE_DRAFT",
             Self::PreviewMismatch => "STALE_PREVIEW",
             Self::NameConflict { .. } => "NAME_CONFLICT",
+            Self::InvalidLifecycleAction => "INVALID_LIFECYCLE_ACTION",
+            Self::LifecycleNotAllowed => "LIFECYCLE_NOT_ALLOWED",
+            Self::DirectoryChanged => "STALE_DIRECTORY",
+            Self::DeleteConfirmationMismatch => "DELETE_CONFIRMATION_MISMATCH",
             Self::Blocked => "BLOCKING_FINDINGS",
             Self::UnsafePath => "UNSAFE_PATH",
             Self::Io(_) => "LOCAL_IO_ERROR",

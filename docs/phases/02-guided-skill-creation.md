@@ -2,10 +2,9 @@
 
 ## Status
 
-Task 2.1 was accepted by the project owner on 2026-07-30. Tasks 2.2, 2.3, and
-2.5 are complete, Task 2.6 is in progress, and Task 2.4 is pending as the
-unified acceptance pass after Task 2.6. The
-current creation command accepts Markdown only. Supporting-file authoring
+Task 2.1 was accepted by the project owner on 2026-07-30. Tasks 2.2, 2.3, 2.5,
+and 2.6 are complete. Task 2.4 is in progress as the unified acceptance pass.
+The current creation command accepts Markdown only. Supporting-file authoring
 remains a later capability and is not silently accepted or written.
 
 ## Context
@@ -51,7 +50,7 @@ instructions differently, so the editor must derive its form from each
 
 ### Task 2.2 - Safe Skill Creation Commands
 
-  - Status: completed
+- Status: completed
 - Outcome: create a new personal Skill through guarded Rust commands without
   overwriting an existing directory.
 - Interface:
@@ -86,7 +85,7 @@ instructions differently, so the editor must derive its form from each
 
 ### Task 2.4 - Usability And Recovery Verification
 
-- Status: pending
+- Status: in progress
 - Outcome: first-time creation, safety explanation, lifecycle mutation, and
   error-recovery scenarios pass together in the native app.
 - Dependencies: complete Tasks 2.5 and 2.6 before asking the project owner to
@@ -127,7 +126,7 @@ instructions differently, so the editor must derive its form from each
 
 ### Task 2.6 - Guarded Personal Skill Lifecycle
 
-- Status: in progress
+- Status: completed
 - Outcome: a user can disable, re-enable, archive, restore, and permanently
   delete personal Skills without using Finder or the terminal.
 - State transitions:
@@ -205,7 +204,9 @@ instructions differently, so the editor must derive its form from each
   frontend and Rust checks passed.
 - Task 2.6: added by the project owner to complete the personal Skill lifecycle
   without reproducing CC Switch distribution or synchronization features.
+- Task 2.6: completed on 2026-07-30 after full-directory revisions, guarded
+  transitions, archive-only exact-name deletion, source restrictions, and GUI
+  actions passed 22 Rust tests plus the frontend production build.
 - Task 2.4: its first pass exposed the missing delete workflow, so the project
   owner moved unified acceptance after Tasks 2.5 and 2.6.
-- Remaining execution order: complete 2.6 guarded personal Skill lifecycle,
-  then run 2.4 unified acceptance.
+- Remaining execution: run Task 2.4 unified acceptance in the native app.
