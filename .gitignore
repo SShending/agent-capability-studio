@@ -6,6 +6,14 @@ coverage/
 # Tauri and Rust build output
 src-tauri/target/
 target/
+src-tauri/gen/
+
+# Platform icon output not used by the macOS-first build
+src-tauri/icons/android/
+src-tauri/icons/ios/
+src-tauri/icons/StoreLogo.png
+src-tauri/icons/Square*.png
+src-tauri/icons/*.ico
 
 # Generated visual QA artifacts and local application state
 outputs/

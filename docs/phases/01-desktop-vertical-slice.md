@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted by the project owner. Task 1.0 is in progress.
+Implementation is complete and the unsigned local `.app` has been built. Phase
+acceptance awaits the project owner's native-window workflow verification.
 
 ## Context
 

@@ -1,4 +1,9 @@
-const token = document.querySelector('meta[name="skill-center-token"]').content;
+import { createIcons, icons } from "lucide";
+import { desktop } from "./desktop-bridge.js";
+
+window.lucide = {
+  createIcons: (options = {}) => createIcons({ icons, ...options })
+};
 
 const state = {
   skills: [],
@@ -76,22 +81,16 @@ function refreshIcons() {
 }
 
 async function api(url, options = {}) {
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      "X-Skill-Center-Token": token,
-      ...(options.headers || {})
-    }
-  });
-  let payload;
-  try {
-    payload = await response.json();
-  } catch {
-    payload = {};
+  if (url === "/api/skills" && !options.method) return desktop.listSkills();
+  const detail = url.match(/^\/api\/skills\/([^/]+)$/);
+  if (detail && !options.method) return desktop.getSkill(decodeURIComponent(detail[1]));
+  const audit = url.match(/^\/api\/skills\/([^/]+)\/audit$/);
+  const body = options.body ? JSON.parse(options.body) : {};
+  if (audit && options.method === "POST") return desktop.auditDraft(decodeURIComponent(audit[1]), body.markdown);
+  if (detail && options.method === "PUT") {
+    return desktop.saveDraft(decodeURIComponent(detail[1]), body.markdown, body.expectedHash);
   }
-  if (!response.ok) throw new Error(payload.error || `Request failed (${response.status})`);
-  return payload;
+  throw new Error("此操作将在后续阶段提供。");
 }
 
 function initials(name) {
@@ -325,18 +324,8 @@ function renderDetail() {
   actions.replaceChildren();
   if (skill.source === "personal") {
     actions.append(
-      actionButton("编辑", "square-pen", "primary-button", () => openEditor(skill.id)),
-      actionButton("停用", "circle-pause", "secondary-button", () => confirmSkillAction("toggle", skill)),
-      actionButton("归档", "archive", "secondary-button", () => confirmSkillAction("archive", skill))
+      actionButton("编辑", "square-pen", "primary-button", () => openEditor(skill.id))
     );
-  } else if (skill.source === "disabled") {
-    actions.append(
-      actionButton("编辑", "square-pen", "primary-button", () => openEditor(skill.id)),
-      actionButton("启用", "circle-play", "secondary-button", () => confirmSkillAction("toggle", skill)),
-      actionButton("归档", "archive", "secondary-button", () => confirmSkillAction("archive", skill))
-    );
-  } else if (skill.source === "archive") {
-    actions.append(actionButton("恢复", "archive-restore", "primary-button", () => confirmSkillAction("restore", skill)));
   } else {
     const readonly = document.createElement("span");
     readonly.className = "trigger-badge";
@@ -661,7 +650,7 @@ elements.sort.addEventListener("change", () => {
 });
 
 elements.refresh.addEventListener("click", () => loadSkills());
-elements.install.addEventListener("click", () => elements.installDialog.showModal());
+elements.install?.addEventListener("click", () => elements.installDialog.showModal());
 elements.closeDetail.addEventListener("click", () => elements.detailPanel.classList.remove("is-open"));
 elements.closeEditor.addEventListener("click", requestCloseEditor);
 elements.guidedMode.addEventListener("click", () => setEditorMode("guided"));

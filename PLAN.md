@@ -2,8 +2,8 @@
 
 ## Current Position
 
-- Active phase: Phase 1 implementation
-- In-progress task: 1.0 Establish a recoverable local Git baseline
+- Active phase: Phase 1 acceptance
+- In-progress task: none
 - Last accepted milestone: product direction and v0.1 boundary in `INIT.md`
 - Blocking decisions: none
 - Validation item: confirm the final minimum macOS version before public release
@@ -28,12 +28,12 @@ Acceptance:
 
 Tasks:
 
-- [ ] 1.0 Establish a recoverable local Git baseline. (in progress)
-- [ ] 1.1 Scaffold Tauri 2 and the frontend build.
-- [ ] 1.2 Implement the read-only Codex catalog in Rust.
-- [ ] 1.3 Port audit, diff, and guarded save into Rust.
-- [ ] 1.4 Connect the frontend through a typed desktop bridge and consolidate UI.
-- [ ] 1.5 Remove Node runtime dependency after parity and build the local `.app`.
+- [x] 1.0 Establish a recoverable local Git baseline. Local-only baseline: `9eb75c5`.
+- [x] 1.1 Scaffold Tauri 2 and the frontend build.
+- [x] 1.2 Implement the read-only Codex catalog in Rust.
+- [x] 1.3 Port audit, diff, and guarded save into Rust.
+- [x] 1.4 Connect the frontend through a typed desktop bridge and consolidate UI.
+- [x] 1.5 Remove Node runtime dependency after parity and build the local `.app`.
 
 ## Phase 2 - Guided Skill Creation
 

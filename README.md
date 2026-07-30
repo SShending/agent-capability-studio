@@ -1,19 +1,24 @@
 # Agent Skill Studio
 
-A Codex-first visual workspace for understanding, editing, auditing, comparing,
-and migrating Agent Skills. It is designed for people who do not want to edit
-Skill files by hand.
+A macOS desktop workspace for understanding, editing, auditing, comparing, and
+migrating Agent Skills. It is designed for people who do not want to edit Skill
+files by hand.
 
 ## Run
 
 ```bash
 npm install
-npm start
+npm run desktop:dev
 ```
 
-Open `http://127.0.0.1:4177`.
+For a local unsigned application build:
 
-The server binds only to `127.0.0.1`.
+```bash
+npm run desktop:build
+```
+
+The built app is at `src-tauri/target/release/bundle/macos/Agent Skill Studio.app`.
+The shipped application does not start a Node HTTP server or require Node.js.
 
 ## Current scope
 
@@ -23,10 +28,10 @@ The server binds only to `127.0.0.1`.
   sensitive-data signals, and exact changes before saving.
 - Require explicit confirmation before saving findings that need manual review.
 - Prevent stale drafts from overwriting a Skill changed elsewhere.
-- Enable, disable, archive, restore, validate, and install Skills from GitHub.
+- Keep system and plugin-managed Skills read-only.
 
 Audit results are evidence-based findings, not a security certificate or an
-absolute safety guarantee. System and plugin-managed Skills remain read-only.
+absolute safety guarantee.
 
 ## Product boundary
 
