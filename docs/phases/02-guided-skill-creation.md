@@ -2,9 +2,9 @@
 
 ## Status
 
-Task 2.1 was accepted by the project owner on 2026-07-30. Task 2.2 awaits design
-review before implementation; later creation and file-support tasks remain
-pending.
+Task 2.1 was accepted by the project owner on 2026-07-30. Task 2.2 is
+complete; the current creation command accepts Markdown only. Supporting-file
+authoring remains a later capability and is not silently accepted or written.
 
 ## Context
 
@@ -43,7 +43,7 @@ instructions differently, so the editor must derive its form from each
 
 ### Task 2.2 - Safe Skill Creation Commands
 
-- Status: pending
+  - Status: completed
 - Outcome: create a new personal Skill through guarded Rust commands without
   overwriting an existing directory.
 - Interface:
@@ -58,7 +58,8 @@ instructions differently, so the editor must derive its form from each
   - reject existing personal, disabled, managed, plugin, or archived identity
     conflicts with a typed error;
   - atomically reserve the final personal directory with create-new semantics,
-    write supporting files before `SKILL.md`, and write `SKILL.md` last;
+    then write `SKILL.md` last; this task deliberately accepts no supporting
+    files, so later support can add them before that final write;
   - clean up only the directory created by the current operation after a failed
     write, and never remove a pre-existing path;
   - never execute draft content or scripts.
@@ -92,4 +93,8 @@ instructions differently, so the editor must derive its form from each
 
 - Task 2.1: accepted on 2026-07-30 after the heading-aware editor was built,
   tested, packaged, and opened in a fresh native window.
-- Remaining Phase 2 tasks: pending.
+- Task 2.2: completed on 2026-07-30 after Rust command tests covered preview,
+  source collisions, stale previews, directory races, invalid and oversized
+  drafts, cleanup on failed writes, and created-Skill discoverability. The
+  native-window workflow remains part of Task 2.3 and Task 2.4.
+- Remaining Phase 2 tasks: 2.3 and 2.4.

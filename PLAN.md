@@ -2,8 +2,8 @@
 
 ## Current Position
 
-- Active phase: Phase 2 Task 2.2 plan review
-- In-progress task: none
+- Active phase: Phase 2 implementation
+- In-progress task: 2.3 Add draft preview, audit, confirmation, and post-create navigation
 - Last accepted milestone: Phase 1 native desktop vertical slice
 - Blocking decisions: none
 - Validation item: confirm the final minimum macOS version before public release
@@ -55,7 +55,7 @@ Acceptance:
 Tasks:
 
 - [x] 2.1 Define the Skill Draft document model and heading-aware form flow.
-- [ ] 2.2 Implement safe Rust creation commands and collision handling.
+- [x] 2.2 Implement safe Rust creation commands and collision handling.
 - [ ] 2.3 Add draft preview, audit, confirmation, and post-create navigation.
 - [ ] 2.4 Verify with first-time and error-recovery usability scenarios.
 

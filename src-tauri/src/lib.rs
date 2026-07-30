@@ -1,7 +1,10 @@
 mod skills;
 
 use serde::Serialize;
-use skills::{AuditResult, Catalog, SkillDetail, Workspace, WorkspaceError};
+use skills::{
+    AuditResult, Catalog, CreateSkillResult, NewSkillPreview, SkillDetail, Workspace,
+    WorkspaceError,
+};
 use tauri::State;
 
 struct AppState(Workspace);
@@ -15,7 +18,10 @@ struct CommandError {
 
 impl From<WorkspaceError> for CommandError {
     fn from(error: WorkspaceError) -> Self {
-        Self { code: error.code().to_string(), message: error.to_string() }
+        Self {
+            code: error.code().to_string(),
+            message: error.to_string(),
+        }
     }
 }
 
@@ -30,7 +36,11 @@ fn get_skill(id: String, state: State<'_, AppState>) -> Result<SkillDetail, Comm
 }
 
 #[tauri::command]
-fn audit_draft(id: String, markdown: String, state: State<'_, AppState>) -> Result<AuditResult, CommandError> {
+fn audit_draft(
+    id: String,
+    markdown: String,
+    state: State<'_, AppState>,
+) -> Result<AuditResult, CommandError> {
     state.0.audit_draft(&id, &markdown).map_err(Into::into)
 }
 
@@ -41,13 +51,43 @@ fn save_draft(
     expected_hash: String,
     state: State<'_, AppState>,
 ) -> Result<skills::SaveResult, CommandError> {
-    state.0.save_draft(&id, &markdown, &expected_hash).map_err(Into::into)
+    state
+        .0
+        .save_draft(&id, &markdown, &expected_hash)
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+fn preview_new_skill(
+    markdown: String,
+    state: State<'_, AppState>,
+) -> Result<NewSkillPreview, CommandError> {
+    state.0.preview_new_skill(&markdown).map_err(Into::into)
+}
+
+#[tauri::command]
+fn create_skill(
+    markdown: String,
+    expected_draft_hash: String,
+    state: State<'_, AppState>,
+) -> Result<CreateSkillResult, CommandError> {
+    state
+        .0
+        .create_skill(&markdown, &expected_draft_hash)
+        .map_err(Into::into)
 }
 
 pub fn run() {
     tauri::Builder::default()
         .manage(AppState(Workspace::from_environment()))
-        .invoke_handler(tauri::generate_handler![list_skills, get_skill, audit_draft, save_draft])
+        .invoke_handler(tauri::generate_handler![
+            list_skills,
+            get_skill,
+            audit_draft,
+            save_draft,
+            preview_new_skill,
+            create_skill
+        ])
         .run(tauri::generate_context!())
         .expect("error while running Agent Skill Studio");
 }
