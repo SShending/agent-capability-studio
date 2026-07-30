@@ -10,6 +10,11 @@
 - Keep v0.1 focused on the Codex Skill workflow. MCP, rules, plugins, hooks,
   automations, runtime traces, other Agents, and other operating systems follow
   only after the Codex desktop workflow is stable.
+- Treat Skills as the first capability module, not a permanent product limit.
+  Add a new capability type only after current alternatives are re-evaluated and
+  it proves reuse of the Studio's ownership, evidence, diff, and mutation model.
+- Keep the `Agent Skill Studio` name until a second capability type is implemented
+  and validated with the first user.
 
 ## Product Validation
 

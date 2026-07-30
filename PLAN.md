@@ -2,8 +2,8 @@
 
 ## Current Position
 
-- Active phase: Phase 2 implementation
-- In-progress task: 2.1 Define the Skill Draft document model and form flow
+- Active phase: Phase 2 Task 2.2 plan review
+- In-progress task: none
 - Last accepted milestone: Phase 1 native desktop vertical slice
 - Blocking decisions: none
 - Validation item: confirm the final minimum macOS version before public release
@@ -54,7 +54,7 @@ Acceptance:
 
 Tasks:
 
-- [ ] 2.1 Define the Skill Draft document model and heading-aware form flow. (in progress)
+- [x] 2.1 Define the Skill Draft document model and heading-aware form flow.
 - [ ] 2.2 Implement safe Rust creation commands and collision handling.
 - [ ] 2.3 Add draft preview, audit, confirmation, and post-create navigation.
 - [ ] 2.4 Verify with first-time and error-recovery usability scenarios.
@@ -131,3 +131,15 @@ Tasks:
 - Rules, plugins, hooks, and automation authoring.
 - Runtime tool-call observability with explicit privacy and retention design.
 - Windows and Linux packaging after macOS and adapter contracts are stable.
+
+## Post-v0.1 Capability Validation Gate
+
+Before adding a non-Skill module:
+
+1. Recheck current products and open-source implementations for that capability.
+2. Select exactly one second capability type for a small vertical slice.
+3. Prove it reuses ownership, evidence, comparison, guarded mutation, and Agent
+   Adapter concepts without weakening the Skill model.
+4. Integrate or launch maintained specialist tools instead of rebuilding them.
+5. Validate the workflow with the first user before scheduling further modules
+   or reconsidering the product name.

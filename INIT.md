@@ -7,9 +7,10 @@ order, and recommended technical direction were approved on 2026-07-30.
 
 ## Goal
 
-Give non-programmers a local desktop workspace where they can understand,
-create, edit, audit, compare, and migrate Agent Skills without using a terminal
-or editing configuration files by hand.
+Give non-programmers a local desktop workspace where they can understand and
+manage Agent capabilities without using a terminal or editing configuration
+files by hand, beginning with safe authoring, auditing, comparison, and
+migration of Agent Skills.
 
 ## Problem
 
@@ -66,8 +67,10 @@ programming background.
 
 ## Constraints
 
-- Product: remain focused on Skill authoring, evidence, comparison, and migration;
-  do not become a general Agent configuration manager.
+- Product: keep v0.1 focused on Skill authoring, evidence, comparison, and
+  migration. Add another Agent capability type only after the Skill workflow is
+  stable, current alternatives are re-evaluated, and a shared Studio model is
+  demonstrated; do not become an undifferentiated configuration manager.
 - User experience: local GUI first, plain language, familiar macOS interaction,
   advanced source and evidence available one level deeper.
 - Safety: distinguish evidence from guarantees; never label a Skill "safe" or
@@ -125,17 +128,34 @@ plain-language evidence, exact revision comparison, explicit mutation gates, and
 portable migration for people who do not work directly with files. Existing
 tools can remain discovery, distribution, scanning, or debugging backends.
 
+## Long-Term Product Horizon
+
+- Treat Skills as the first Agent capability type, not the permanent limit of
+  the product.
+- Candidate capability types include Agent instruction/rule files, MCP
+  configuration and explanation, plugins, hooks, commands, declared tools and
+  permissions, and privacy-controlled runtime tool-call evidence.
+- Keep specialized jobs with maintained products: use MCP Inspector for protocol
+  testing, CC Switch for broad distribution and synchronization, and established
+  scanners for security-engine evidence.
+- Admit a capability type only when it can reuse the Studio's proven interaction
+  model: discover ownership, explain behavior, edit or author, show evidence and
+  exact differences, and guard every mutation.
+- Reconsider the `Agent Skill Studio` name only after a second capability type is
+  implemented and validated with the first user.
+
 ## Current Starting Point
 
-- A localhost Node prototype scans Codex Skill locations and supports browse,
-  enable/disable, archive/restore, GitHub installation, guided/source editing,
-  deterministic baseline audit, diff display, and hash-guarded atomic save.
-- The interface has been redesigned toward a macOS desktop workspace, but it is
-  still a browser-delivered prototype and not a packaged desktop application.
+- A Tauri 2 macOS application discovers real Codex Skill locations through a
+  Rust core and ships without a Node HTTP runtime.
+- Personal Skills support source and heading-aware guided editing, deterministic
+  baseline audit, exact diff display, stale-hash conflict detection, and atomic
+  save. System and plugin-managed Skills remain read-only.
+- The unsigned local `.app` and Phase 1 workflow were accepted by the first
+  user. Guided creation, candidate audit, bundle migration, signing, and public
+  release remain in later phases.
 - The audit is intentionally a small baseline and must not be presented as a
   replacement for a maintained security scanner.
-- The current stylesheet contains prototype history and should be consolidated
-  during the desktop migration rather than carried forward indefinitely.
 
 ## Recommended Technical Direction
 
@@ -177,6 +197,8 @@ tools can remain discovery, distribution, scanning, or debugging backends.
 - Exclude credentials from Skill Bundles and do not add bundle encryption in
   v0.1.
 - Use `Agent Skill Studio` as the product name and `agent-skill-studio` as the
-  repository name.
+  repository name during the Skill-first product stage.
+- Treat Agent Skills as the first capability module; validate one second
+  capability type after v0.1 before expanding or renaming the product.
 - Target macOS 13 or later provisionally; verify the final minimum against Tauri,
   WebKit, signing, and tested feature requirements before release.

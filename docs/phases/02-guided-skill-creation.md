@@ -2,9 +2,9 @@
 
 ## Status
 
-The heading-aware document model and structured editor direction for Task 2.1
-was accepted by the project owner on 2026-07-30. Later creation and file-support
-tasks remain pending.
+Task 2.1 was accepted by the project owner on 2026-07-30. Task 2.2 awaits design
+review before implementation; later creation and file-support tasks remain
+pending.
 
 ## Context
 
@@ -28,7 +28,7 @@ instructions differently, so the editor must derive its form from each
 
 ### Task 2.1 - Heading-Aware Skill Draft Model
 
-- Status: in progress
+- Status: completed
 - Outcome: the guided editor renders each Skill's H1-H6 structure as an
   indented outline with independently editable section titles and content.
 - Affected files: `src/skill-document.js`, its tests, `src/app.js`,
@@ -46,6 +46,29 @@ instructions differently, so the editor must derive its form from each
 - Status: pending
 - Outcome: create a new personal Skill through guarded Rust commands without
   overwriting an existing directory.
+- Interface:
+  - `preview_new_skill(markdown)` performs a side-effect-free audit, derives the
+    validated Skill name and destination, checks cross-source name conflicts,
+    and returns the exact draft hash for confirmation;
+  - `create_skill(markdown, expected_draft_hash)` repeats all validation and
+    creates only the previewed revision.
+- Mutation rules:
+  - derive the directory name exclusively from valid frontmatter; never accept
+    a frontend path;
+  - reject existing personal, disabled, managed, plugin, or archived identity
+    conflicts with a typed error;
+  - atomically reserve the final personal directory with create-new semantics,
+    write supporting files before `SKILL.md`, and write `SKILL.md` last;
+  - clean up only the directory created by the current operation after a failed
+    write, and never remove a pre-existing path;
+  - never execute draft content or scripts.
+- Affected files: Rust workspace types and commands, `src/desktop-bridge.js`,
+  creation form state, fixtures, and command tests.
+- Automated verification: invalid names, traversal-like names, size limits,
+  every source conflict, preview-hash mismatch, concurrent directory creation,
+  failed-write cleanup, and successful discoverability.
+- Human verification: preview destination and findings, cancel without mutation,
+  create a disposable Skill, and confirm immediate navigation to the new Skill.
 
 ### Task 2.3 - Creation Review And Confirmation
 
@@ -67,4 +90,6 @@ instructions differently, so the editor must derive its form from each
 
 ## Acceptance Record
 
-Pending implementation and native-window verification.
+- Task 2.1: accepted on 2026-07-30 after the heading-aware editor was built,
+  tested, packaged, and opened in a fresh native window.
+- Remaining Phase 2 tasks: pending.
