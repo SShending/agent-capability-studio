@@ -225,6 +225,55 @@ svg {
   background: var(--amber);
 }
 
+.audit-issue-list {
+  display: grid;
+  max-height: 144px;
+  gap: 2px;
+  overflow-y: auto;
+  margin-top: 2px;
+}
+
+.audit-issue {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) 14px;
+  gap: 6px;
+  align-items: center;
+  width: 100%;
+  min-height: 30px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--ink);
+  background: transparent;
+  text-align: left;
+}
+
+.audit-issue:hover {
+  background: rgba(118, 118, 128, 0.11);
+}
+
+.audit-issue:active {
+  background: rgba(118, 118, 128, 0.17);
+}
+
+.audit-issue svg {
+  width: 13px;
+  height: 13px;
+  color: var(--amber);
+}
+
+.audit-issue svg:last-child {
+  color: var(--faint);
+}
+
+.audit-issue span {
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 520;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .sidebar-footer {
   display: grid;
   grid-template-columns: 22px minmax(0, 1fr);

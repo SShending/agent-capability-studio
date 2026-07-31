@@ -1,5 +1,11 @@
 const countedSources = ["personal", "disabled", "system", "plugin", "archive"];
 
+export function personalSkillsNeedingAttention(skills) {
+  return skills
+    .filter((skill) => skill.source === "personal" && skill.hasBlockingFindings)
+    .sort((left, right) => left.displayName.localeCompare(right.displayName));
+}
+
 function adjustCounts(counts, skill, direction) {
   const next = { ...counts };
   next.total = Math.max(0, (next.total || 0) + direction);

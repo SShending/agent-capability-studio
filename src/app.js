@@ -1,6 +1,10 @@
 import { createIcons, icons } from "lucide";
 import { desktop } from "./desktop-bridge.js";
-import { removeCatalogSkill, replaceCatalogSkill } from "./catalog-state.js";
+import {
+  personalSkillsNeedingAttention,
+  removeCatalogSkill,
+  replaceCatalogSkill
+} from "./catalog-state.js";
 import { parseSkillDocument, updateSkillDocument } from "./skill-document.js";
 
 window.lucide = {
@@ -34,6 +38,9 @@ const elements = {
   refresh: document.querySelector("#refresh-button"),
   create: document.querySelector("#create-skill-button"),
   settings: document.querySelector("#settings-button"),
+  auditStatus: document.querySelector("#audit-status"),
+  auditLabel: document.querySelector("#audit-label"),
+  auditIssueList: document.querySelector("#audit-issue-list"),
   confirmDialog: document.querySelector("#confirm-dialog"),
   confirmForm: document.querySelector("#confirm-form"),
   confirmTitle: document.querySelector("#confirm-title"),
@@ -189,6 +196,46 @@ function visibleSkills() {
   });
 }
 
+function setSourceFilter(source) {
+  state.source = source;
+  document.querySelectorAll("[data-source]").forEach((item) => {
+    const active = item.dataset.source === source;
+    item.classList.toggle("is-active", active);
+    item.setAttribute("aria-pressed", String(active));
+  });
+  renderList();
+}
+
+async function inspectHealthIssue(skill) {
+  state.query = "";
+  elements.search.value = "";
+  setSourceFilter("personal");
+  await selectSkill(skill.id);
+  if (state.detail?.id !== skill.id) return;
+  try {
+    await openEditor(skill.id);
+  } catch (error) {
+    showToast(error.message, true);
+  }
+}
+
+function renderHealthIssues() {
+  const issues = personalSkillsNeedingAttention(state.skills);
+  const rows = issues.map((skill) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "audit-issue";
+    button.title = `查看 ${skill.displayName} 的阻断问题`;
+    button.setAttribute("aria-label", button.title);
+    button.innerHTML = '<i data-lucide="circle-alert"></i><span></span><i data-lucide="chevron-right"></i>';
+    button.querySelector("span").textContent = skill.displayName;
+    button.addEventListener("click", () => inspectHealthIssue(skill));
+    return button;
+  });
+  elements.auditIssueList.replaceChildren(...rows);
+  elements.auditIssueList.hidden = rows.length === 0;
+}
+
 function updateCounts() {
   const counts = state.counts;
   document.querySelector("#count-all").textContent = counts.total || 0;
@@ -197,11 +244,12 @@ function updateCounts() {
   }
   document.querySelector("#codex-home").textContent = state.codexHome || "~/.codex";
 
-  const audit = document.querySelector("#audit-status");
-  const label = document.querySelector("#audit-label");
-  audit.classList.toggle("is-good", !counts.needsAttention);
-  audit.classList.toggle("has-issues", Boolean(counts.needsAttention));
-  label.textContent = counts.needsAttention ? `${counts.needsAttention} 项存在阻断问题` : "个人 Skill 状态正常";
+  elements.auditStatus.classList.toggle("is-good", !counts.needsAttention);
+  elements.auditStatus.classList.toggle("has-issues", Boolean(counts.needsAttention));
+  elements.auditLabel.textContent = counts.needsAttention
+    ? `${counts.needsAttention} 项存在阻断问题`
+    : "个人 Skill 状态正常";
+  renderHealthIssues();
 }
 
 function applyCatalogState(catalog) {
@@ -1055,12 +1103,7 @@ async function loadSkills({ preserveSelection = true, selectedDetail = null, for
 document.querySelector("#source-nav").addEventListener("click", (event) => {
   const button = event.target.closest("[data-source]");
   if (!button) return;
-  state.source = button.dataset.source;
-  document.querySelectorAll("[data-source]").forEach((item) => {
-    item.classList.toggle("is-active", item === button);
-    item.setAttribute("aria-pressed", String(item === button));
-  });
-  renderList();
+  setSourceFilter(button.dataset.source);
 });
 
 elements.search.addEventListener("input", () => {

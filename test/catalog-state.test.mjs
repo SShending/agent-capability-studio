@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { removeCatalogSkill, replaceCatalogSkill } from "../src/catalog-state.js";
+import {
+  personalSkillsNeedingAttention,
+  removeCatalogSkill,
+  replaceCatalogSkill
+} from "../src/catalog-state.js";
 
 const personal = {
   id: "personal-id",
@@ -55,4 +59,17 @@ test("unknown removals leave the catalog unchanged", () => {
   const result = removeCatalogSkill([personal], counts, "missing");
   assert.deepEqual(result.skills, [personal]);
   assert.deepEqual(result.counts, counts);
+});
+
+test("lists named personal Skills needing attention in display order", () => {
+  const skills = [
+    { id: "z", displayName: "Zulu", source: "personal", hasBlockingFindings: true },
+    { id: "a", displayName: "Alpha", source: "personal", hasBlockingFindings: true },
+    { id: "disabled", displayName: "Disabled", source: "disabled", hasBlockingFindings: true },
+    { id: "clear", displayName: "Clear", source: "personal", hasBlockingFindings: false }
+  ];
+  assert.deepEqual(
+    personalSkillsNeedingAttention(skills).map((skill) => skill.id),
+    ["a", "z"]
+  );
 });
