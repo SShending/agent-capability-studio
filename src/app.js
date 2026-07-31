@@ -1,5 +1,6 @@
 import { createIcons, icons } from "lucide";
 import { desktop } from "./desktop-bridge.js";
+import { removeCatalogSkill, replaceCatalogSkill } from "./catalog-state.js";
 import { parseSkillDocument, updateSkillDocument } from "./skill-document.js";
 
 window.lucide = {
@@ -194,6 +195,14 @@ function updateCounts() {
   audit.classList.toggle("is-good", !counts.needsAttention);
   audit.classList.toggle("has-issues", Boolean(counts.needsAttention));
   label.textContent = counts.needsAttention ? `${counts.needsAttention} 项存在阻断问题` : "个人 Skill 状态正常";
+}
+
+function applyCatalogState(catalog) {
+  state.skills = catalog.skills;
+  state.counts = catalog.counts;
+  updateCounts();
+  renderList();
+  refreshIcons();
 }
 
 function renderList() {
@@ -950,13 +959,18 @@ async function requestSkillLifecycle(action, skill) {
         await desktop.deleteArchivedSkill(skill.id, preview.directoryRevision, elements.confirmName.value);
         state.selectedId = null;
         state.detail = null;
+        applyCatalogState(removeCatalogSkill(state.skills, state.counts, skill.id));
         elements.detailPanel.classList.remove("is-open");
-        await loadSkills({ preserveSelection: false });
+        renderDetail();
         showToast(`${skill.displayName} 已永久删除。`);
       }
       : async () => {
         const result = await desktop.applySkillLifecycle(skill.id, action, preview.directoryRevision);
-        await loadSkills({ preserveSelection: false, selectedDetail: result.skill });
+        state.selectedId = result.skill.id;
+        state.detail = result.skill;
+        applyCatalogState(replaceCatalogSkill(state.skills, state.counts, skill.id, result.skill));
+        elements.detailPanel.classList.add("is-open");
+        renderDetail();
         showToast(`${config[2].replace("确认", "")}完成。请在新任务中使用最新状态。`);
       };
     presentConfirmation({
@@ -991,11 +1005,11 @@ function showToast(message, isError = false) {
   }, isError ? 6500 : 4200);
 }
 
-async function loadSkills({ preserveSelection = true, selectedDetail = null } = {}) {
+async function loadSkills({ preserveSelection = true, selectedDetail = null, forceRefresh = false } = {}) {
   elements.refresh.classList.add("is-spinning");
   elements.refresh.disabled = true;
   try {
-    const data = await api("/api/skills");
+    const data = forceRefresh ? await desktop.refreshSkills() : await api("/api/skills");
     state.skills = data.skills;
     state.counts = data.counts;
     state.roots = data.roots;
@@ -1042,7 +1056,7 @@ elements.sort.addEventListener("change", () => {
   renderList();
 });
 
-elements.refresh.addEventListener("click", () => loadSkills());
+elements.refresh.addEventListener("click", () => loadSkills({ forceRefresh: true }));
 elements.create.addEventListener("click", openNewSkill);
 elements.closeDetail.addEventListener("click", () => elements.detailPanel.classList.remove("is-open"));
 elements.closeEditor.addEventListener("click", requestCloseEditor);

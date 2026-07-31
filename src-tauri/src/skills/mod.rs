@@ -17,7 +17,11 @@ use std::{
     fs::{self},
     io::Write,
     path::{Path, PathBuf},
-    time::SystemTime,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc, RwLock,
+    },
+    time::{Instant, SystemTime},
 };
 use tempfile::NamedTempFile;
 use thiserror::Error;
@@ -80,6 +84,37 @@ impl WorkspaceError {
 #[derive(Clone)]
 pub struct Workspace {
     codex_home: PathBuf,
+    index: Arc<RwLock<Option<CatalogIndex>>>,
+    metrics: Arc<WorkspaceMetrics>,
+}
+
+#[derive(Default)]
+struct WorkspaceMetrics {
+    full_scans: AtomicU64,
+    full_scan_nanos: AtomicU64,
+    skill_reads: AtomicU64,
+    skill_read_nanos: AtomicU64,
+    baseline_audits: AtomicU64,
+    baseline_audit_nanos: AtomicU64,
+    directory_revisions: AtomicU64,
+    directory_revision_nanos: AtomicU64,
+    lifecycle_mutations: AtomicU64,
+    lifecycle_mutation_nanos: AtomicU64,
+}
+
+#[cfg(test)]
+#[derive(Debug, Default)]
+struct MetricsSnapshot {
+    full_scans: u64,
+    full_scan_nanos: u64,
+    skill_reads: u64,
+    skill_read_nanos: u64,
+    baseline_audits: u64,
+    baseline_audit_nanos: u64,
+    directory_revisions: u64,
+    directory_revision_nanos: u64,
+    lifecycle_mutations: u64,
+    lifecycle_mutation_nanos: u64,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
@@ -297,21 +332,15 @@ struct InternalSkill {
     modified: SystemTime,
 }
 
-impl Workspace {
-    pub fn from_environment() -> Self {
-        let codex_home = env::var_os("CODEX_HOME")
-            .map(PathBuf::from)
-            .or_else(|| env::var_os("HOME").map(|home| PathBuf::from(home).join(".codex")))
-            .unwrap_or_else(|| PathBuf::from(".codex"));
-        Self { codex_home }
-    }
+struct CatalogIndex {
+    by_id: HashMap<String, InternalSkill>,
+    order: Vec<String>,
+}
 
-    pub fn list_skills(&self) -> Result<Catalog, WorkspaceError> {
-        let roots = self.roots();
-        let skills = self.scan_all_skills()?;
-
+impl CatalogIndex {
+    fn from_skills(skills: Vec<InternalSkill>) -> Self {
         let mut newest_plugins: HashMap<String, InternalSkill> = HashMap::new();
-        let mut non_plugins = Vec::new();
+        let mut indexed = Vec::new();
         for skill in skills {
             if skill.source == Source::Plugin {
                 let replace = newest_plugins
@@ -322,19 +351,84 @@ impl Workspace {
                     newest_plugins.insert(skill.summary.name.clone(), skill);
                 }
             } else {
-                non_plugins.push(skill);
+                indexed.push(skill);
             }
         }
-        non_plugins.extend(newest_plugins.into_values());
-        non_plugins.sort_by(|a, b| {
-            a.source
-                .rank()
-                .cmp(&b.source.rank())
-                .then_with(|| a.summary.display_name.cmp(&b.summary.display_name))
-        });
+        indexed.extend(newest_plugins.into_values());
+        let by_id = indexed
+            .into_iter()
+            .map(|skill| (skill.summary.id.clone(), skill))
+            .collect();
+        let mut index = Self {
+            by_id,
+            order: Vec::new(),
+        };
+        index.resort();
+        index
+    }
 
+    fn resort(&mut self) {
+        self.order = self.by_id.keys().cloned().collect();
+        self.order.sort_by(|left, right| {
+            let left = &self.by_id[left];
+            let right = &self.by_id[right];
+            left.source
+                .rank()
+                .cmp(&right.source.rank())
+                .then_with(|| left.summary.display_name.cmp(&right.summary.display_name))
+        });
+    }
+
+    fn upsert(&mut self, skill: InternalSkill) {
+        self.by_id.insert(skill.summary.id.clone(), skill);
+        self.resort();
+    }
+
+    fn remove(&mut self, id: &str) {
+        self.by_id.remove(id);
+        self.order.retain(|existing| existing != id);
+    }
+}
+
+impl Workspace {
+    pub fn from_environment() -> Self {
+        let codex_home = env::var_os("CODEX_HOME")
+            .map(PathBuf::from)
+            .or_else(|| env::var_os("HOME").map(|home| PathBuf::from(home).join(".codex")))
+            .unwrap_or_else(|| PathBuf::from(".codex"));
+        Self::new(codex_home)
+    }
+
+    fn new(codex_home: PathBuf) -> Self {
+        Self {
+            codex_home,
+            index: Arc::new(RwLock::new(None)),
+            metrics: Arc::new(WorkspaceMetrics::default()),
+        }
+    }
+
+    pub fn list_skills(&self) -> Result<Catalog, WorkspaceError> {
+        self.ensure_index()?;
+        self.catalog_from_index()
+    }
+
+    pub fn refresh_skills(&self) -> Result<Catalog, WorkspaceError> {
+        let index = self.scan_catalog_index()?;
+        *self
+            .index
+            .write()
+            .unwrap_or_else(|error| error.into_inner()) = Some(index);
+        self.catalog_from_index()
+    }
+
+    fn catalog_from_index(&self) -> Result<Catalog, WorkspaceError> {
+        let roots = self.roots();
+        let guard = self.index.read().unwrap_or_else(|error| error.into_inner());
+        let index = guard.as_ref().ok_or(WorkspaceError::NotFound)?;
         let mut counts = Counts::default();
-        for skill in &non_plugins {
+        let mut summaries = Vec::with_capacity(index.order.len());
+        for id in &index.order {
+            let skill = &index.by_id[id];
             counts.total += 1;
             match skill.source {
                 Source::Personal => {
@@ -348,6 +442,7 @@ impl Workspace {
                 Source::Plugin => counts.plugin += 1,
                 Source::Archive => counts.archive += 1,
             }
+            summaries.push(skill.summary.clone());
         }
         Ok(Catalog {
             codex_home: self.codex_home.display().to_string(),
@@ -358,7 +453,7 @@ impl Workspace {
                 disabled_root: roots.disabled.display().to_string(),
                 archive_root: roots.archive.display().to_string(),
             },
-            skills: non_plugins.into_iter().map(|skill| skill.summary).collect(),
+            skills: summaries,
             counts,
         })
     }
@@ -387,7 +482,7 @@ impl Workspace {
         expected_hash: &str,
     ) -> Result<SaveResult, WorkspaceError> {
         self.validate_draft(markdown)?;
-        let skill = self.editable_skill(id)?;
+        let skill = self.editable_skill_current(id)?;
         if expected_hash.is_empty() || expected_hash != hash(&skill.markdown) {
             return Err(WorkspaceError::Conflict);
         }
@@ -396,6 +491,10 @@ impl Workspace {
             return Err(WorkspaceError::Blocked);
         }
         self.atomic_save(&skill, markdown)?;
+        let updated = self
+            .read_skill(&skill.directory, skill.source, &skill.root)?
+            .ok_or(WorkspaceError::NotFound)?;
+        self.upsert_index(updated)?;
         Ok(SaveResult {
             ok: true,
             content_hash: hash(markdown),
@@ -447,10 +546,15 @@ impl Workspace {
         F: FnOnce(&Path, &str) -> Result<(), WorkspaceError>,
     {
         self.validate_draft(markdown)?;
-        let preview = self.preview_new_skill(markdown)?;
-        if expected_draft_hash.is_empty() || expected_draft_hash != preview.draft_hash {
+        if expected_draft_hash.is_empty() || expected_draft_hash != hash(markdown) {
             return Err(WorkspaceError::PreviewMismatch);
         }
+        let refreshed = self.scan_catalog_index()?;
+        *self
+            .index
+            .write()
+            .unwrap_or_else(|error| error.into_inner()) = Some(refreshed);
+        let preview = self.preview_new_skill(markdown)?;
         if let Some(conflict) = preview.conflict {
             return Err(WorkspaceError::NameConflict {
                 name: preview.name.unwrap_or_default(),
@@ -484,6 +588,7 @@ impl Workspace {
         let skill = self
             .read_skill(&destination, Source::Personal, &personal_root)?
             .ok_or(WorkspaceError::UnsafePath)?;
+        self.upsert_index(skill.clone())?;
         Ok(CreateSkillResult {
             ok: true,
             id: skill.summary.id,
@@ -510,11 +615,42 @@ impl Workspace {
         Ok(skill)
     }
 
+    fn editable_skill_current(&self, id: &str) -> Result<InternalSkill, WorkspaceError> {
+        let skill = self.find_skill_current(id)?;
+        if skill.source != Source::Personal {
+            return Err(WorkspaceError::ReadOnly);
+        }
+        Ok(skill)
+    }
+
     fn find_skill(&self, id: &str) -> Result<InternalSkill, WorkspaceError> {
-        self.scan_all_skills()?
-            .into_iter()
-            .find(|skill| skill.summary.id == id)
+        self.ensure_index()?;
+        self.index
+            .read()
+            .unwrap_or_else(|error| error.into_inner())
+            .as_ref()
+            .and_then(|index| index.by_id.get(id))
+            .cloned()
             .ok_or(WorkspaceError::NotFound)
+    }
+
+    fn find_skill_current(&self, id: &str) -> Result<InternalSkill, WorkspaceError> {
+        let indexed = self.find_skill(id)?;
+        let metadata = fs::symlink_metadata(&indexed.skill_file)?;
+        if metadata.file_type().is_symlink() || !metadata.file_type().is_file() {
+            return Err(WorkspaceError::UnsafePath);
+        }
+        let markdown = fs::read_to_string(&indexed.skill_file)?;
+        if markdown == indexed.markdown {
+            return Ok(indexed);
+        }
+        let current = self
+            .read_skill(&indexed.directory, indexed.source, &indexed.root)?
+            .ok_or(WorkspaceError::NotFound)?;
+        if current.summary.id != id {
+            return Err(WorkspaceError::NotFound);
+        }
+        Ok(current)
     }
 
     fn roots(&self) -> WorkspaceRoots {
@@ -527,7 +663,27 @@ impl Workspace {
         }
     }
 
-    fn scan_all_skills(&self) -> Result<Vec<InternalSkill>, WorkspaceError> {
+    fn ensure_index(&self) -> Result<(), WorkspaceError> {
+        if self
+            .index
+            .read()
+            .unwrap_or_else(|error| error.into_inner())
+            .is_some()
+        {
+            return Ok(());
+        }
+        let mut guard = self
+            .index
+            .write()
+            .unwrap_or_else(|error| error.into_inner());
+        if guard.is_none() {
+            *guard = Some(self.scan_catalog_index()?);
+        }
+        Ok(())
+    }
+
+    fn scan_catalog_index(&self) -> Result<CatalogIndex, WorkspaceError> {
+        let started = Instant::now();
         let roots = self.roots();
         let mut skills = Vec::new();
         skills.extend(self.scan_immediate(&roots.personal, Source::Personal, false)?);
@@ -535,15 +691,30 @@ impl Workspace {
         skills.extend(self.scan_immediate(&roots.system, Source::System, true)?);
         skills.extend(self.scan_recursive(&roots.plugin, Source::Plugin, 0)?);
         skills.extend(self.scan_immediate(&roots.archive, Source::Archive, false)?);
-        Ok(skills)
+        let elapsed = self.record_timing(
+            &self.metrics.full_scans,
+            &self.metrics.full_scan_nanos,
+            started,
+        );
+        #[cfg(debug_assertions)]
+        eprintln!(
+            "performance catalog_full_scan duration_ms={} indexed_skills={}",
+            elapsed / 1_000_000,
+            skills.len()
+        );
+        Ok(CatalogIndex::from_skills(skills))
     }
 
     fn find_name_conflict(&self, name: &str) -> Result<Option<NameConflict>, WorkspaceError> {
-        if let Some(skill) = self
-            .scan_all_skills()?
-            .into_iter()
-            .find(|skill| skill.summary.name == name)
-        {
+        self.ensure_index()?;
+        let guard = self.index.read().unwrap_or_else(|error| error.into_inner());
+        let indexed = guard.as_ref().and_then(|index| {
+            index
+                .by_id
+                .values()
+                .find(|skill| skill.summary.name == name)
+        });
+        if let Some(skill) = indexed {
             return Ok(Some(NameConflict {
                 source: skill.source.label().to_string(),
                 path: skill.directory.display().to_string(),
@@ -557,6 +728,59 @@ impl Workspace {
             }));
         }
         Ok(None)
+    }
+
+    fn upsert_index(&self, skill: InternalSkill) -> Result<(), WorkspaceError> {
+        self.ensure_index()?;
+        if let Some(index) = self
+            .index
+            .write()
+            .unwrap_or_else(|error| error.into_inner())
+            .as_mut()
+        {
+            index.upsert(skill);
+        }
+        Ok(())
+    }
+
+    fn remove_from_index(&self, id: &str) {
+        if let Some(index) = self
+            .index
+            .write()
+            .unwrap_or_else(|error| error.into_inner())
+            .as_mut()
+        {
+            index.remove(id);
+        }
+    }
+
+    fn record_timing(&self, count: &AtomicU64, nanos: &AtomicU64, started: Instant) -> u64 {
+        count.fetch_add(1, Ordering::Relaxed);
+        let elapsed = started.elapsed().as_nanos().min(u64::MAX as u128) as u64;
+        nanos.fetch_add(elapsed, Ordering::Relaxed);
+        elapsed
+    }
+
+    #[cfg(test)]
+    fn metrics_snapshot(&self) -> MetricsSnapshot {
+        MetricsSnapshot {
+            full_scans: self.metrics.full_scans.load(Ordering::Relaxed),
+            full_scan_nanos: self.metrics.full_scan_nanos.load(Ordering::Relaxed),
+            skill_reads: self.metrics.skill_reads.load(Ordering::Relaxed),
+            skill_read_nanos: self.metrics.skill_read_nanos.load(Ordering::Relaxed),
+            baseline_audits: self.metrics.baseline_audits.load(Ordering::Relaxed),
+            baseline_audit_nanos: self.metrics.baseline_audit_nanos.load(Ordering::Relaxed),
+            directory_revisions: self.metrics.directory_revisions.load(Ordering::Relaxed),
+            directory_revision_nanos: self
+                .metrics
+                .directory_revision_nanos
+                .load(Ordering::Relaxed),
+            lifecycle_mutations: self.metrics.lifecycle_mutations.load(Ordering::Relaxed),
+            lifecycle_mutation_nanos: self
+                .metrics
+                .lifecycle_mutation_nanos
+                .load(Ordering::Relaxed),
+        }
     }
 
     fn personal_root_for_creation(&self) -> Result<PathBuf, WorkspaceError> {
@@ -634,6 +858,7 @@ impl Workspace {
         source: Source,
         root: &Path,
     ) -> Result<Option<InternalSkill>, WorkspaceError> {
+        let read_started = Instant::now();
         let skill_file = directory.join("SKILL.md");
         let metadata = match fs::symlink_metadata(&skill_file) {
             Ok(value) => value,
@@ -667,16 +892,16 @@ impl Workspace {
             document.description.clone()
         };
         let explicit = explicit_trigger(&name, &description);
+        let audit_started = Instant::now();
         let baseline = audit(&markdown, &markdown, &name);
+        self.record_timing(
+            &self.metrics.baseline_audits,
+            &self.metrics.baseline_audit_nanos,
+            audit_started,
+        );
         // A macOS temporary directory may have both a display path and a canonical path.
         // IDs must be stable across creation and later catalog scans.
-        let stable_directory =
-            fs::canonicalize(directory).unwrap_or_else(|_| directory.to_path_buf());
-        let id = URL_SAFE_NO_PAD.encode(format!(
-            "{}\0{}",
-            source.label(),
-            stable_directory.display()
-        ));
+        let id = skill_id(source, directory);
         let brand_color = agent.interface.brand_color;
         let summary = SkillSummary {
             id,
@@ -716,7 +941,7 @@ impl Workspace {
                 None
             },
         };
-        Ok(Some(InternalSkill {
+        let skill = InternalSkill {
             summary,
             source,
             root: root.to_path_buf(),
@@ -725,7 +950,13 @@ impl Workspace {
             markdown,
             document,
             modified: metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH),
-        }))
+        };
+        self.record_timing(
+            &self.metrics.skill_reads,
+            &self.metrics.skill_read_nanos,
+            read_started,
+        );
+        Ok(Some(skill))
     }
 
     fn atomic_save(&self, skill: &InternalSkill, markdown: &str) -> Result<(), WorkspaceError> {
@@ -832,6 +1063,16 @@ fn valid_color(color: &str) -> bool {
 }
 fn hash(value: &str) -> String {
     format!("{:x}", Sha256::digest(value.as_bytes()))
+}
+fn skill_id(source: Source, directory: &Path) -> String {
+    // A macOS temporary directory may have both a display path and a canonical path.
+    // IDs must be stable across creation, moves, and later catalog scans.
+    let stable_directory = fs::canonicalize(directory).unwrap_or_else(|_| directory.to_path_buf());
+    URL_SAFE_NO_PAD.encode(format!(
+        "{}\0{}",
+        source.label(),
+        stable_directory.display()
+    ))
 }
 fn count_files(root: &Path, depth: usize) -> usize {
     if depth > 5 {
@@ -1018,9 +1259,7 @@ mod tests {
 
     fn workspace() -> (tempfile::TempDir, Workspace) {
         let directory = tempfile::tempdir().expect("temporary directory");
-        let workspace = Workspace {
-            codex_home: directory.path().to_path_buf(),
-        };
+        let workspace = Workspace::new(directory.path().to_path_buf());
         (directory, workspace)
     }
 
@@ -1251,10 +1490,20 @@ mod tests {
             fs::read_to_string(directory.path().join("skills/demo/SKILL.md")).expect("saved file"),
             revised
         );
+        assert_eq!(
+            workspace
+                .get_skill(&skill.id)
+                .expect("updated detail")
+                .markdown,
+            revised
+        );
         assert!(matches!(
             workspace.save_draft(&skill.id, &revised, &detail.content_hash),
             Err(WorkspaceError::Conflict)
         ));
+        let metrics = workspace.metrics_snapshot();
+        assert_eq!(metrics.full_scans, 1);
+        assert_eq!(metrics.skill_reads, 2);
     }
 
     #[test]
@@ -1312,6 +1561,50 @@ mod tests {
                 .name,
             "new-skill"
         );
+        assert_eq!(workspace.metrics_snapshot().full_scans, 2);
+    }
+
+    #[test]
+    fn external_changes_appear_only_after_explicit_refresh() {
+        let (directory, workspace) = workspace();
+        write_skill(
+            directory.path(),
+            "first",
+            "Use when the user asks for the first Skill.",
+            "1. Read.\n2. Return the first result.",
+        );
+        assert_eq!(
+            workspace
+                .list_skills()
+                .expect("initial catalog")
+                .counts
+                .total,
+            1
+        );
+        write_skill(
+            directory.path(),
+            "second",
+            "Use when the user asks for the second Skill.",
+            "1. Read.\n2. Return the second result.",
+        );
+        assert_eq!(
+            workspace
+                .list_skills()
+                .expect("cached catalog")
+                .counts
+                .total,
+            1
+        );
+        assert_eq!(workspace.metrics_snapshot().full_scans, 1);
+        assert_eq!(
+            workspace
+                .refresh_skills()
+                .expect("refreshed catalog")
+                .counts
+                .total,
+            2
+        );
+        assert_eq!(workspace.metrics_snapshot().full_scans, 2);
     }
 
     #[test]

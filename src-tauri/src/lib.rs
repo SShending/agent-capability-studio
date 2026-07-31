@@ -44,6 +44,11 @@ fn list_skills(state: State<'_, AppState>) -> Result<Catalog, CommandError> {
 }
 
 #[tauri::command]
+fn refresh_skills(state: State<'_, AppState>) -> Result<Catalog, CommandError> {
+    state.workspace.refresh_skills().map_err(Into::into)
+}
+
+#[tauri::command]
 fn get_skill(id: String, state: State<'_, AppState>) -> Result<SkillDetail, CommandError> {
     state.workspace.get_skill(&id).map_err(Into::into)
 }
@@ -210,6 +215,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             list_skills,
+            refresh_skills,
             get_skill,
             audit_draft,
             save_draft,

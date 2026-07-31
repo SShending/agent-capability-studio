@@ -3,9 +3,9 @@
 ## Status
 
 Task 2.1 was accepted by the project owner on 2026-07-30. Tasks 2.2, 2.3, 2.5,
-and 2.6 are complete. Task 2.5 was reopened after unified acceptance found a
+2.6, and 2.7 are complete. Task 2.5 was reopened after unified acceptance found a
 missed Chinese destructive-data instruction, then completed with the regression
-rule and optional cloud Deep Audit. Task 2.4 is pending until Task 2.7 is complete.
+rule and optional cloud Deep Audit. Task 2.4 unified acceptance is now pending.
 The current creation command accepts Markdown only. Supporting-file authoring
 remains a later capability and is not silently accepted or written.
 
@@ -187,7 +187,7 @@ instructions differently, so the editor must derive its form from each
 
 ### Task 2.7 - Lifecycle Performance Stabilization
 
-- Status: pending
+- Status: completed
 - Outcome: lifecycle actions remain responsive with a large personal catalog and
   deep plugin cache, without weakening containment or concurrency checks.
 - Current evidence:
@@ -283,9 +283,16 @@ instructions differently, so the editor must derive its form from each
   check passed. Live provider behavior remains part of Task 2.4 because tests
   use a fake model adapter and no user credential.
 - Task 2.7: added after archive and restore felt slow on the owner's real
-  catalog. Duplicate apply/detail scans were already reduced, while catalog
-  indexing and deterministic performance verification remain pending.
-- Remaining execution: complete Task 2.7 performance stabilization, then repeat
-  Task 2.4 in the native app, including one user-configured provider run. Do not
-  rebuild the `.app` during routine Task 2.7 iterations; rebuild once for that
-  unified acceptance unless packaging configuration changes.
+  catalog. Duplicate apply/detail scans had already been reduced, while catalog
+  indexing and deterministic performance verification still needed completion.
+- Task 2.7: completed after a shared Rust catalog index, explicit external
+  Refresh command, unchanged-audit reuse, precise save/create/move/delete index
+  updates, frontend row/count updates, and scan/timing instrumentation were
+  implemented. A 121-Skill fixture completed archive, restore, second archive,
+  and permanent deletion with one initial full scan, eight required revision
+  checks, four mutations, and no repeated baseline audit. On the owner's real
+  catalog, the initial 59-entry development scan took about 832 ms; archive and
+  restore each took about 2 ms with no second full scan.
+- Remaining execution: repeat Task 2.4 in the native app, including one
+  user-configured provider run. Rebuild the `.app` once for that unified
+  acceptance unless packaging configuration changes.

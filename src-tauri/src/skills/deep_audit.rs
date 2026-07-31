@@ -948,9 +948,7 @@ mod tests {
     }
 
     fn workspace(directory: &TempDir) -> Workspace {
-        Workspace {
-            codex_home: directory.path().join("codex"),
-        }
+        Workspace::new(directory.path().join("codex"))
     }
 
     fn draft() -> String {

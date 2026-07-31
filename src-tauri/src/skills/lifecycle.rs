@@ -1,5 +1,5 @@
 use super::{
-    hash, InternalSkill, NameConflict, SkillDetail, Source, Workspace, WorkspaceError,
+    hash, skill_id, InternalSkill, NameConflict, SkillDetail, Source, Workspace, WorkspaceError,
     MAX_SCAN_DEPTH,
 };
 use serde::Serialize;
@@ -8,6 +8,7 @@ use std::{
     fs::{self, File},
     io::Read,
     path::{Path, PathBuf},
+    time::Instant,
 };
 
 #[derive(Clone, Debug, Serialize)]
@@ -94,10 +95,10 @@ impl Workspace {
         action: &str,
     ) -> Result<LifecyclePreview, WorkspaceError> {
         let action = LifecycleAction::parse(action)?;
-        let skill = self.find_skill(id)?;
+        let skill = self.find_skill_current(id)?;
         let destination_source = action.destination_source(skill.source)?;
         let source_directory = validated_skill_directory(&skill)?;
-        let directory_revision = directory_revision(&source_directory)?;
+        let directory_revision = self.measured_directory_revision(&source_directory)?;
         let destination = destination_source.map(|source| {
             self.root_for_source(source)
                 .join(&skill.summary.directory_name)
@@ -134,12 +135,13 @@ impl Workspace {
         if action == LifecycleAction::Delete {
             return Err(WorkspaceError::LifecycleNotAllowed);
         }
-        let skill = self.find_skill(id)?;
+        let mutation_started = Instant::now();
+        let skill = self.find_skill_current(id)?;
         let target_source = action
             .destination_source(skill.source)?
             .ok_or(WorkspaceError::LifecycleNotAllowed)?;
         let source_directory = validated_skill_directory(&skill)?;
-        let current_revision = directory_revision(&source_directory)?;
+        let current_revision = self.measured_directory_revision(&source_directory)?;
         if expected_directory_revision.is_empty() || current_revision != expected_directory_revision
         {
             return Err(WorkspaceError::DirectoryChanged);
@@ -157,18 +159,34 @@ impl Workspace {
         }
 
         fs::rename(&source_directory, &destination)?;
-        let moved = self
-            .read_skill(&destination, target_source, &target_root)?
-            .ok_or(WorkspaceError::UnsafePath)?;
+        let moved = rehome_skill(
+            skill.clone(),
+            target_source,
+            target_root,
+            destination.clone(),
+        );
         let id = moved.summary.id.clone();
-        let moved_revision = directory_revision(&destination)?;
+        let moved_revision = current_revision;
         let detail = SkillDetail {
             content_hash: hash(&moved.markdown),
-            summary: moved.summary,
-            markdown: moved.markdown,
-            document: moved.document,
+            summary: moved.summary.clone(),
+            markdown: moved.markdown.clone(),
+            document: moved.document.clone(),
             editable: target_source == Source::Personal,
         };
+        self.remove_from_index(&skill.summary.id);
+        self.upsert_index(moved)?;
+        let elapsed = self.record_timing(
+            &self.metrics.lifecycle_mutations,
+            &self.metrics.lifecycle_mutation_nanos,
+            mutation_started,
+        );
+        #[cfg(debug_assertions)]
+        eprintln!(
+            "performance lifecycle_mutation action={} duration_ms={}",
+            action.label(),
+            elapsed / 1_000_000
+        );
         Ok(LifecycleResult {
             ok: true,
             id,
@@ -186,7 +204,8 @@ impl Workspace {
         expected_directory_revision: &str,
         confirmation_name: &str,
     ) -> Result<DeleteSkillResult, WorkspaceError> {
-        let skill = self.find_skill(id)?;
+        let mutation_started = Instant::now();
+        let skill = self.find_skill_current(id)?;
         if skill.source != Source::Archive {
             return Err(WorkspaceError::LifecycleNotAllowed);
         }
@@ -194,12 +213,23 @@ impl Workspace {
             return Err(WorkspaceError::DeleteConfirmationMismatch);
         }
         let directory = validated_skill_directory(&skill)?;
-        let current_revision = directory_revision(&directory)?;
+        let current_revision = self.measured_directory_revision(&directory)?;
         if expected_directory_revision.is_empty() || current_revision != expected_directory_revision
         {
             return Err(WorkspaceError::DirectoryChanged);
         }
         fs::remove_dir_all(directory)?;
+        self.remove_from_index(id);
+        let elapsed = self.record_timing(
+            &self.metrics.lifecycle_mutations,
+            &self.metrics.lifecycle_mutation_nanos,
+            mutation_started,
+        );
+        #[cfg(debug_assertions)]
+        eprintln!(
+            "performance lifecycle_mutation action=delete duration_ms={}",
+            elapsed / 1_000_000
+        );
         Ok(DeleteSkillResult {
             ok: true,
             deleted_name: skill.summary.name,
@@ -233,6 +263,17 @@ impl Workspace {
         }
         Ok(fs::canonicalize(requested)?)
     }
+
+    fn measured_directory_revision(&self, directory: &Path) -> Result<String, WorkspaceError> {
+        let started = Instant::now();
+        let result = directory_revision(directory);
+        self.record_timing(
+            &self.metrics.directory_revisions,
+            &self.metrics.directory_revision_nanos,
+            started,
+        );
+        result
+    }
 }
 
 fn validated_skill_directory(skill: &InternalSkill) -> Result<PathBuf, WorkspaceError> {
@@ -250,8 +291,34 @@ fn validated_skill_directory(skill: &InternalSkill) -> Result<PathBuf, Workspace
     if directory.parent() != Some(root.as_path()) {
         return Err(WorkspaceError::UnsafePath);
     }
-    directory_revision(&directory)?;
     Ok(directory)
+}
+
+fn rehome_skill(
+    mut skill: InternalSkill,
+    source: Source,
+    root: PathBuf,
+    directory: PathBuf,
+) -> InternalSkill {
+    skill.source = source;
+    skill.root = root;
+    skill.skill_file = directory.join("SKILL.md");
+    skill.directory = directory.clone();
+    skill.summary.id = skill_id(source, &directory);
+    skill.summary.source = source.label().into();
+    skill.summary.state = match source {
+        Source::Disabled => "disabled",
+        Source::Archive => "archived",
+        _ => "active",
+    }
+    .into();
+    skill.summary.path = directory.display().to_string();
+    skill.summary.directory_name = directory
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
+    skill
 }
 
 fn directory_revision(root: &Path) -> Result<String, WorkspaceError> {
@@ -331,9 +398,7 @@ mod tests {
 
     fn workspace() -> (tempfile::TempDir, Workspace) {
         let directory = tempfile::tempdir().expect("temporary directory");
-        let workspace = Workspace {
-            codex_home: directory.path().to_path_buf(),
-        };
+        let workspace = Workspace::new(directory.path().to_path_buf());
         (directory, workspace)
     }
 
@@ -533,5 +598,95 @@ mod tests {
             Err(WorkspaceError::UnsafePath)
         ));
         assert!(external.exists());
+    }
+
+    #[test]
+    fn large_catalog_lifecycle_reuses_index_until_explicit_refresh() {
+        let (directory, workspace) = workspace();
+        write_skill(directory.path(), "skills/indexed", "indexed");
+        for index in 0..120 {
+            write_skill(
+                directory.path(),
+                &format!("plugins/cache/publisher/bundle/1.0.0/skills/plugin-{index:03}"),
+                &format!("plugin-{index:03}"),
+            );
+        }
+
+        let catalog = workspace.list_skills().expect("initial catalog");
+        assert_eq!(catalog.counts.total, 121);
+        let personal_id = catalog
+            .skills
+            .iter()
+            .find(|skill| skill.name == "indexed")
+            .expect("personal skill")
+            .id
+            .clone();
+        workspace.get_skill(&personal_id).expect("cached detail");
+        workspace
+            .get_skill(&personal_id)
+            .expect("cached detail again");
+
+        let archive = workspace
+            .preview_skill_lifecycle(&personal_id, "archive")
+            .expect("archive preview");
+        let archived = workspace
+            .apply_skill_lifecycle(&personal_id, "archive", &archive.directory_revision)
+            .expect("archive");
+        let archived_catalog = workspace
+            .list_skills()
+            .expect("indexed catalog after archive");
+        assert_eq!(archived_catalog.counts.personal, 0);
+        assert_eq!(archived_catalog.counts.archive, 1);
+        workspace
+            .get_skill(&archived.id)
+            .expect("moved detail from index");
+
+        let restore = workspace
+            .preview_skill_lifecycle(&archived.id, "restore")
+            .expect("restore preview");
+        let restored = workspace
+            .apply_skill_lifecycle(&archived.id, "restore", &restore.directory_revision)
+            .expect("restore");
+        let restored_catalog = workspace
+            .list_skills()
+            .expect("indexed catalog after restore");
+        assert_eq!(restored_catalog.counts.personal, 1);
+        assert_eq!(restored_catalog.counts.archive, 0);
+        workspace
+            .get_skill(&restored.id)
+            .expect("restored detail from index");
+
+        let archive_again = workspace
+            .preview_skill_lifecycle(&restored.id, "archive")
+            .expect("second archive preview");
+        let archived_again = workspace
+            .apply_skill_lifecycle(&restored.id, "archive", &archive_again.directory_revision)
+            .expect("second archive");
+        let delete = workspace
+            .preview_skill_lifecycle(&archived_again.id, "delete")
+            .expect("delete preview");
+        workspace
+            .delete_archived_skill(&archived_again.id, &delete.directory_revision, "indexed")
+            .expect("delete archived Skill");
+        let deleted_catalog = workspace
+            .list_skills()
+            .expect("indexed catalog after delete");
+        assert_eq!(deleted_catalog.counts.total, 120);
+        assert_eq!(deleted_catalog.counts.archive, 0);
+
+        let before_refresh = workspace.metrics_snapshot();
+        assert_eq!(before_refresh.full_scans, 1);
+        assert_eq!(before_refresh.skill_reads, 121);
+        assert_eq!(before_refresh.baseline_audits, before_refresh.skill_reads);
+        assert_eq!(before_refresh.directory_revisions, 8);
+        assert_eq!(before_refresh.lifecycle_mutations, 4);
+        assert!(before_refresh.full_scan_nanos > 0);
+        assert!(before_refresh.skill_read_nanos > 0);
+        assert!(before_refresh.baseline_audit_nanos > 0);
+        assert!(before_refresh.directory_revision_nanos > 0);
+        assert!(before_refresh.lifecycle_mutation_nanos > 0);
+
+        workspace.refresh_skills().expect("explicit refresh");
+        assert_eq!(workspace.metrics_snapshot().full_scans, 2);
     }
 }

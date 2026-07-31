@@ -3,7 +3,7 @@
 ## Current Position
 
 - Active phase: Phase 2 implementation
-- In-progress task: 2.7 Eliminate lifecycle catalog rescans and verify responsive transitions
+- In-progress task: 2.4 Run unified creation, safety, lifecycle, and recovery acceptance
 - Last accepted milestone: Phase 1 native desktop vertical slice
 - Blocking decision: none; the first cloud-model interface and credential store
   were accepted on 2026-07-30
@@ -71,7 +71,7 @@ Tasks:
 - [ ] 2.4 Run unified creation, safety, lifecycle, and recovery acceptance after Tasks 2.5, 2.6, and 2.7.
 - [x] 2.5 Harden built-in safety evidence and validate scanner integration options.
 - [x] 2.6 Implement guarded personal Skill lifecycle actions.
-- [ ] 2.7 Eliminate lifecycle catalog rescans and verify responsive transitions.
+- [x] 2.7 Eliminate lifecycle catalog rescans and verify responsive transitions.
 
 ## Phase 3 - GitHub And Local Candidate Audit
 
