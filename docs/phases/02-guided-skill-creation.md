@@ -2,11 +2,10 @@
 
 ## Status
 
-Task 2.1 was accepted by the project owner on 2026-07-30. Tasks 2.2, 2.3, 2.5,
-2.6, and 2.7 are complete. Task 2.5 was reopened after unified acceptance found a
-missed Chinese destructive-data instruction, then completed with the regression
-rule and optional cloud Deep Audit. Task 2.4 unified acceptance is now pending.
-The current creation command accepts Markdown only. Supporting-file authoring
+Phase 2 was accepted by the project owner on 2026-07-31. Task 2.5 was reopened
+after unified acceptance found a missed Chinese destructive-data instruction,
+then completed with the regression rule and optional cloud Deep Audit. The
+current creation command accepts Markdown only. Supporting-file authoring
 remains a later capability and is not silently accepted or written.
 
 ## Context
@@ -99,11 +98,13 @@ instructions differently, so the editor must derive its form from each
 
 ### Task 2.4 - Usability And Recovery Verification
 
-- Status: pending
+- Status: accepted on 2026-07-31
 - Outcome: first-time creation, safety explanation, lifecycle mutation, and
   error-recovery scenarios pass together in the native app.
-- Dependencies: complete Tasks 2.5, 2.6, and 2.7 before asking the project owner
-  to repeat acceptance.
+- Verification: the owner accepted the unified native workflow after Tasks 2.5,
+  2.6, and 2.7, including provider configuration and connection testing, Deep
+  Audit consent behavior, safety evidence, lifecycle actions, recovery, and
+  responsive catalog updates.
 
 ### Task 2.5 - Safety Evidence Hardening
 
@@ -306,6 +307,7 @@ instructions differently, so the editor must derive its form from each
 - Task 2.4 preparation: Settings can test saved or unsaved provider values with
   one fixed synthetic request. The test reads no Skill content, persists no
   unsaved profile or credential, and reports the actual mode and endpoint used.
-- Remaining execution: repeat Task 2.4 in the native app, including one
-  user-configured provider run. Rebuild the `.app` once for that unified
-  acceptance unless packaging configuration changes.
+- Task 2.4 and Phase 2 were accepted by the project owner on 2026-07-31. The
+  final automated pass included 36 Rust tests, 9 frontend tests, the production
+  web build, Clippy with warnings denied, and a warning-free Release build. The
+  fresh app is at `src-tauri/target/release/bundle/macos/Agent Skill Studio.app`.

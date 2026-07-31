@@ -2,11 +2,12 @@
 
 ## Current Position
 
-- Active phase: Phase 2 implementation
-- In-progress task: 2.4 Run unified creation, safety, lifecycle, and recovery acceptance
-- Last accepted milestone: Phase 1 native desktop vertical slice
-- Blocking decision: none; the first cloud-model interface and credential store
-  were accepted on 2026-07-30
+- Active phase: Phase 3 preparation
+- In-progress task: none
+- Next task: 3.1 Validate the safest maintained GitHub acquisition approach
+- Last accepted milestone: Phase 2 guided creation and personal lifecycle
+- Blocking decision: select the Phase 3 acquisition approach through Task 3.1
+  before implementing candidate staging
 - Validation item: confirm the final minimum macOS version before public release
 
 ## Phase 1 - Native Desktop Vertical Slice
@@ -40,6 +41,8 @@ Tasks:
 
 ## Phase 2 - Guided Skill Creation And Personal Lifecycle
 
+Status: accepted by the project owner on 2026-07-31.
+
 Detailed plan: [02-guided-skill-creation.md](docs/phases/02-guided-skill-creation.md)
 
 Outcome: a non-programmer creates and manages a valid personal Codex Skill
@@ -68,7 +71,7 @@ Tasks:
 - [x] 2.1 Define the Skill Draft document model and heading-aware form flow.
 - [x] 2.2 Implement safe Rust creation commands and collision handling.
 - [x] 2.3 Add draft preview, audit, confirmation, and post-create navigation.
-- [ ] 2.4 Run unified creation, safety, lifecycle, and recovery acceptance after Tasks 2.5, 2.6, and 2.7.
+- [x] 2.4 Run unified creation, safety, lifecycle, and recovery acceptance after Tasks 2.5, 2.6, and 2.7.
 - [x] 2.5 Harden built-in safety evidence and validate scanner integration options.
 - [x] 2.6 Implement guarded personal Skill lifecycle actions.
 - [x] 2.7 Eliminate lifecycle catalog rescans and verify responsive transitions.

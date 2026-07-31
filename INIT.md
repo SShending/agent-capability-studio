@@ -228,4 +228,5 @@ tools can remain discovery, distribution, scanning, or debugging backends.
 
 ## Open Decisions
 
-- No open product decision currently blocks Phase 2 implementation.
+- Phase 3 must select a maintained, contained GitHub acquisition approach
+  through Task 3.1 before candidate staging implementation begins.

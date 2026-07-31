@@ -176,7 +176,7 @@ impl Workspace {
         };
         self.remove_from_index(&skill.summary.id);
         self.upsert_index(moved)?;
-        let elapsed = self.record_timing(
+        let _elapsed = self.record_timing(
             &self.metrics.lifecycle_mutations,
             &self.metrics.lifecycle_mutation_nanos,
             mutation_started,
@@ -185,7 +185,7 @@ impl Workspace {
         eprintln!(
             "performance lifecycle_mutation action={} duration_ms={}",
             action.label(),
-            elapsed / 1_000_000
+            _elapsed / 1_000_000
         );
         Ok(LifecycleResult {
             ok: true,
@@ -220,7 +220,7 @@ impl Workspace {
         }
         fs::remove_dir_all(directory)?;
         self.remove_from_index(id);
-        let elapsed = self.record_timing(
+        let _elapsed = self.record_timing(
             &self.metrics.lifecycle_mutations,
             &self.metrics.lifecycle_mutation_nanos,
             mutation_started,
@@ -228,7 +228,7 @@ impl Workspace {
         #[cfg(debug_assertions)]
         eprintln!(
             "performance lifecycle_mutation action=delete duration_ms={}",
-            elapsed / 1_000_000
+            _elapsed / 1_000_000
         );
         Ok(DeleteSkillResult {
             ok: true,

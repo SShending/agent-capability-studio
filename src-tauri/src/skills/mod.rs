@@ -692,7 +692,7 @@ impl Workspace {
         skills.extend(self.scan_immediate(&roots.system, Source::System, true)?);
         skills.extend(self.scan_recursive(&roots.plugin, Source::Plugin, 0)?);
         skills.extend(self.scan_immediate(&roots.archive, Source::Archive, false)?);
-        let elapsed = self.record_timing(
+        let _elapsed = self.record_timing(
             &self.metrics.full_scans,
             &self.metrics.full_scan_nanos,
             started,
@@ -700,7 +700,7 @@ impl Workspace {
         #[cfg(debug_assertions)]
         eprintln!(
             "performance catalog_full_scan duration_ms={} indexed_skills={}",
-            elapsed / 1_000_000,
+            _elapsed / 1_000_000,
             skills.len()
         );
         Ok(CatalogIndex::from_skills(skills))
