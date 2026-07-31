@@ -29,8 +29,9 @@ The shipped application does not start a Node HTTP server or require Node.js.
   encoded payloads, and exact changes before saving.
 - Require explicit confirmation before saving findings that need manual review.
 - Optionally run a two-pass semantic Deep Audit through a user-configured
-  OpenAI-compatible provider after confirming the exact files that will leave
-  the machine; store its API key in macOS Keychain.
+  OpenAI-compatible provider using either Chat Completions or Responses after
+  confirming the exact endpoint and files that will leave the machine; store
+  its API key in macOS Keychain.
 - Open global Settings from the toolbar or with `Command+,` to configure the
   Deep Audit provider and protected credential.
 - Prevent stale drafts from overwriting a Skill changed elsewhere.

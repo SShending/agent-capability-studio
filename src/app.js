@@ -84,6 +84,7 @@ const elements = {
   deepFindingList: document.querySelector("#deep-finding-list"),
   settingsDialog: document.querySelector("#settings-dialog"),
   settingsForm: document.querySelector("#settings-form"),
+  deepApiMode: document.querySelector("#deep-audit-api-mode"),
   deepEndpoint: document.querySelector("#deep-audit-endpoint"),
   deepModel: document.querySelector("#deep-audit-model"),
   deepApiKey: document.querySelector("#deep-audit-api-key"),
@@ -92,6 +93,7 @@ const elements = {
   saveDeepSettings: document.querySelector("#save-deep-audit-settings"),
   deepConsentDialog: document.querySelector("#deep-audit-consent-dialog"),
   deepConsentForm: document.querySelector("#deep-audit-consent-form"),
+  deepConsentApiMode: document.querySelector("#deep-consent-api-mode"),
   deepConsentEndpoint: document.querySelector("#deep-consent-endpoint"),
   deepConsentModel: document.querySelector("#deep-consent-model"),
   deepConsentRequests: document.querySelector("#deep-consent-requests"),
@@ -110,6 +112,11 @@ const sourceLabels = {
   system: "系统",
   plugin: "插件",
   archive: "归档"
+};
+
+const deepAuditApiModeLabels = {
+  chatCompletions: "Chat Completions",
+  responses: "Responses"
 };
 
 function refreshIcons() {
@@ -591,7 +598,8 @@ function renderDeepAuditResult(result) {
   elements.deepResultBadge.textContent = badge;
   elements.deepResultBadge.className = `verdict-badge is-${result.verdict}`;
   elements.deepResultSummary.textContent = summary;
-  elements.deepResultMeta.textContent = `${result.model} · ${result.files.length} 个文件 · 2 次请求${dismissed ? ` · 排除 ${dismissed} 项` : ""}`;
+  const apiMode = deepAuditApiModeLabels[result.apiMode] || result.apiMode;
+  elements.deepResultMeta.textContent = `${apiMode} · ${result.model} · ${result.files.length} 个文件 · 2 次请求${dismissed ? ` · 排除 ${dismissed} 项` : ""}`;
   elements.deepFindingList.replaceChildren(...result.findings.map(renderFinding));
   refreshIcons();
 }
@@ -609,6 +617,7 @@ async function openSettings() {
     }
     const settings = await desktop.getDeepAuditSettings();
     state.deepAuditSettings = settings;
+    elements.deepApiMode.value = settings.apiMode || "chatCompletions";
     elements.deepEndpoint.value = settings.endpoint;
     elements.deepModel.value = settings.model;
     elements.deepApiKey.value = "";
@@ -631,6 +640,7 @@ async function saveDeepAuditSettings(event) {
   try {
     const apiKey = elements.deepApiKey.value.trim() || null;
     const settings = await desktop.saveDeepAuditSettings(
+      elements.deepApiMode.value,
       elements.deepEndpoint.value,
       elements.deepModel.value,
       apiKey
@@ -650,6 +660,7 @@ function deepAuditEditorId() {
 }
 
 function renderDeepAuditConsent(preview) {
+  elements.deepConsentApiMode.textContent = deepAuditApiModeLabels[preview.apiMode] || preview.apiMode;
   elements.deepConsentEndpoint.textContent = preview.endpoint;
   elements.deepConsentModel.textContent = preview.model;
   elements.deepConsentRequests.textContent = `${preview.requestCount} 次（威胁判断 + 误报复核）`;
@@ -687,7 +698,7 @@ async function requestDeepAudit() {
     const settings = await desktop.getDeepAuditSettings();
     state.deepAuditSettings = settings;
     if (!settings.hasApiKey || !settings.endpoint || !settings.model) {
-      await openSettings();
+      showToast("尚未配置深度审查模型。请先在“设置”中填写 API 模式、Base URL、模型和 API key。", true);
       return;
     }
     const preview = await desktop.previewDeepAudit(deepAuditEditorId(), state.editor.draftMarkdown);
@@ -715,7 +726,8 @@ async function performDeepAudit(event) {
       deepAuditEditorId(),
       state.editor.draftMarkdown,
       selectedPaths,
-      state.deepAuditPreview.candidateHash
+      state.deepAuditPreview.candidateHash,
+      state.deepAuditPreview.providerHash
     );
     elements.deepConsentDialog.close();
     renderDeepAuditResult(result);

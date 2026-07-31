@@ -162,8 +162,9 @@ tools can remain discovery, distribution, scanning, or debugging backends.
   baseline audit, exact diff display, stale-hash conflict detection, and atomic
   save. System and plugin-managed Skills remain read-only.
 - Optional Deep Audit supports a user-configured OpenAI-compatible provider,
-  macOS Keychain credentials, per-run file consent, and two-pass grounded
-  semantic review without tool access.
+  explicit Chat Completions or Responses mode, macOS Keychain credentials,
+  per-run file consent, and two-pass grounded semantic review without tool
+  access.
 - The unsigned local `.app` and Phase 1 workflow were accepted by the first
   user. Guided creation, candidate audit, bundle migration, signing, and public
   release remain in later phases.
@@ -211,8 +212,9 @@ tools can remain discovery, distribution, scanning, or debugging backends.
   integration or recreating a scanning engine.
 - Let the user configure the cloud model used for optional Deep Audit; never
   reuse Codex login credentials or silently send Skill content.
-- Use an OpenAI-compatible API Base URL and model name for the first cloud
-  profile, and store its API key only in macOS Keychain.
+- Use an OpenAI-compatible API Base URL, explicit Chat Completions or Responses
+  mode, and model name for the first cloud profile, and store its API key only
+  in macOS Keychain.
 - Allow unsigned local development builds; sign and notarize the public v0.1
   release.
 - Exclude credentials from Skill Bundles and do not add bundle encryption in

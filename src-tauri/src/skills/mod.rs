@@ -3,7 +3,8 @@ mod deep_audit;
 mod lifecycle;
 
 pub use deep_audit::{
-    DeepAuditError, DeepAuditManager, DeepAuditPreview, DeepAuditResult, DeepAuditSettings,
+    DeepAuditApiMode, DeepAuditError, DeepAuditManager, DeepAuditPreview, DeepAuditResult,
+    DeepAuditSettings,
 };
 pub use lifecycle::{DeleteSkillResult, LifecyclePreview, LifecycleResult};
 

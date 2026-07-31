@@ -292,6 +292,13 @@
         <h3 class="settings-section-title">深度审查</h3>
         <div class="form-grid provider-form-grid">
           <label class="full">
+            <span>API 模式</span>
+            <select id="deep-audit-api-mode">
+              <option value="chatCompletions">Chat Completions</option>
+              <option value="responses">Responses</option>
+            </select>
+          </label>
+          <label class="full">
             <span>OpenAI-compatible API Base URL</span>
             <input id="deep-audit-endpoint" type="url" placeholder="https://api.openai.com/v1" autocomplete="url" required />
           </label>
@@ -326,6 +333,7 @@
           </button>
         </div>
         <dl class="provider-summary">
+          <div><dt>API 模式</dt><dd id="deep-consent-api-mode"></dd></div>
           <div><dt>API 地址</dt><dd id="deep-consent-endpoint"></dd></div>
           <div><dt>模型</dt><dd id="deep-consent-model"></dd></div>
           <div><dt>请求</dt><dd id="deep-consent-requests"></dd></div>

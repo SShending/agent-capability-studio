@@ -32,7 +32,9 @@ pub enum DeepAuditError {
     InvalidEndpoint,
     #[error("Enter a model name.")]
     InvalidModel,
-    #[error("The Deep Audit file preview is stale. Review the files again before sending.")]
+    #[error(
+        "The Deep Audit preview is stale. Review the provider and files again before sending."
+    )]
     StalePreview,
     #[error("SKILL.md must be included in every Deep Audit.")]
     MissingSkillDocument,
@@ -68,9 +70,27 @@ impl DeepAuditError {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DeepAuditApiMode {
+    #[default]
+    ChatCompletions,
+    Responses,
+}
+
+impl DeepAuditApiMode {
+    fn path(self) -> &'static str {
+        match self {
+            Self::ChatCompletions => "chat/completions",
+            Self::Responses => "responses",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeepAuditSettings {
+    pub api_mode: DeepAuditApiMode,
     pub endpoint: String,
     pub model: String,
     pub has_api_key: bool,
@@ -95,8 +115,10 @@ pub struct SkippedDeepAuditFile {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeepAuditPreview {
+    pub api_mode: DeepAuditApiMode,
     pub endpoint: String,
     pub model: String,
+    pub provider_hash: String,
     pub files: Vec<DeepAuditFile>,
     pub skipped_files: Vec<SkippedDeepAuditFile>,
     pub candidate_hash: String,
@@ -109,6 +131,7 @@ pub struct DeepAuditPreview {
 pub struct DeepAuditResult {
     pub verdict: String,
     pub findings: Vec<Finding>,
+    pub api_mode: DeepAuditApiMode,
     pub endpoint: String,
     pub model: String,
     pub files: Vec<DeepAuditFile>,
@@ -118,6 +141,8 @@ pub struct DeepAuditResult {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 struct StoredSettings {
+    #[serde(default)]
+    api_mode: DeepAuditApiMode,
     endpoint: String,
     model: String,
 }
@@ -172,14 +197,16 @@ impl CredentialStore for KeychainCredentialStore {
 }
 
 trait ModelAdapter: Send + Sync {
-    fn complete(
-        &self,
-        endpoint: &str,
-        api_key: &str,
-        model: &str,
-        system: &str,
-        user: &str,
-    ) -> Result<String, DeepAuditError>;
+    fn complete(&self, request: ModelRequest<'_>) -> Result<String, DeepAuditError>;
+}
+
+struct ModelRequest<'a> {
+    api_mode: DeepAuditApiMode,
+    endpoint: &'a str,
+    api_key: &'a str,
+    model: &'a str,
+    system: &'a str,
+    user: &'a str,
 }
 
 struct OpenAiCompatibleAdapter {
@@ -214,29 +241,36 @@ struct CompletionMessage {
     content: String,
 }
 
+#[derive(Deserialize)]
+struct ResponsesResponse {
+    #[serde(default)]
+    output: Vec<ResponseOutput>,
+}
+
+#[derive(Deserialize)]
+struct ResponseOutput {
+    #[serde(rename = "type")]
+    kind: String,
+    #[serde(default)]
+    content: Vec<ResponseContent>,
+}
+
+#[derive(Deserialize)]
+struct ResponseContent {
+    #[serde(rename = "type")]
+    kind: String,
+    #[serde(default)]
+    text: String,
+}
+
 impl ModelAdapter for OpenAiCompatibleAdapter {
-    fn complete(
-        &self,
-        endpoint: &str,
-        api_key: &str,
-        model: &str,
-        system: &str,
-        user: &str,
-    ) -> Result<String, DeepAuditError> {
-        let url = completion_url(endpoint)?;
+    fn complete(&self, request: ModelRequest<'_>) -> Result<String, DeepAuditError> {
+        let (url, body) = provider_request(&request)?;
         let response = self
             .client
             .post(url)
-            .bearer_auth(api_key)
-            .json(&serde_json::json!({
-                "model": model,
-                "temperature": 0,
-                "response_format": { "type": "json_object" },
-                "messages": [
-                    { "role": "system", "content": system },
-                    { "role": "user", "content": user }
-                ]
-            }))
+            .bearer_auth(request.api_key)
+            .json(&body)
             .send()
             .map_err(|error| DeepAuditError::Provider(error_without_url(&error)))?;
         if !response.status().is_success() {
@@ -263,14 +297,73 @@ impl ModelAdapter for OpenAiCompatibleAdapter {
                 "provider response exceeded the size limit".into(),
             ));
         }
-        let body: CompletionResponse = serde_json::from_slice(&bytes)
-            .map_err(|_| DeepAuditError::InvalidResponse("missing message content".into()))?;
-        body.choices
-            .into_iter()
-            .next()
-            .map(|choice| choice.message.content)
-            .filter(|content| !content.trim().is_empty())
-            .ok_or_else(|| DeepAuditError::InvalidResponse("empty message content".into()))
+        parse_provider_response(request.api_mode, &bytes)
+    }
+}
+
+fn provider_request(
+    request: &ModelRequest<'_>,
+) -> Result<(Url, serde_json::Value), DeepAuditError> {
+    let url = provider_url(request.endpoint, request.api_mode)?;
+    let body = match request.api_mode {
+        DeepAuditApiMode::ChatCompletions => serde_json::json!({
+            "model": request.model,
+            "temperature": 0,
+            "response_format": { "type": "json_object" },
+            "messages": [
+                { "role": "system", "content": request.system },
+                { "role": "user", "content": request.user }
+            ]
+        }),
+        DeepAuditApiMode::Responses => serde_json::json!({
+            "model": request.model,
+            "store": false,
+            "instructions": request.system,
+            "input": [
+                { "role": "user", "content": request.user }
+            ],
+            "text": { "format": { "type": "json_object" } }
+        }),
+    };
+    Ok((url, body))
+}
+
+fn parse_provider_response(
+    api_mode: DeepAuditApiMode,
+    bytes: &[u8],
+) -> Result<String, DeepAuditError> {
+    let content = match api_mode {
+        DeepAuditApiMode::ChatCompletions => {
+            let body: CompletionResponse = serde_json::from_slice(bytes).map_err(|_| {
+                DeepAuditError::InvalidResponse("missing Chat Completions message content".into())
+            })?;
+            body.choices
+                .into_iter()
+                .next()
+                .map(|choice| choice.message.content)
+                .unwrap_or_default()
+        }
+        DeepAuditApiMode::Responses => {
+            let body: ResponsesResponse = serde_json::from_slice(bytes).map_err(|_| {
+                DeepAuditError::InvalidResponse("missing Responses output text".into())
+            })?;
+            body.output
+                .into_iter()
+                .filter(|item| item.kind == "message")
+                .flat_map(|item| item.content)
+                .filter(|item| item.kind == "output_text")
+                .map(|item| item.text)
+                .filter(|text| !text.trim().is_empty())
+                .collect::<Vec<_>>()
+                .join("\n")
+        }
+    };
+    if content.trim().is_empty() {
+        Err(DeepAuditError::InvalidResponse(
+            "provider returned no output text".into(),
+        ))
+    } else {
+        Ok(content)
     }
 }
 
@@ -293,6 +386,10 @@ impl DeepAuditManager {
     pub fn settings(&self) -> Result<DeepAuditSettings, DeepAuditError> {
         let stored = self.read_settings()?;
         Ok(DeepAuditSettings {
+            api_mode: stored
+                .as_ref()
+                .map(|item| item.api_mode)
+                .unwrap_or_default(),
             endpoint: stored
                 .as_ref()
                 .map(|item| item.endpoint.clone())
@@ -307,6 +404,7 @@ impl DeepAuditManager {
 
     pub fn save_settings(
         &self,
+        api_mode: DeepAuditApiMode,
         endpoint: &str,
         model: &str,
         api_key: Option<&str>,
@@ -323,10 +421,12 @@ impl DeepAuditManager {
             return Err(DeepAuditError::NotConfigured);
         }
         self.write_settings(&StoredSettings {
+            api_mode,
             endpoint: endpoint.clone(),
             model: model.into(),
         })?;
         Ok(DeepAuditSettings {
+            api_mode,
             endpoint,
             model: model.into(),
             has_api_key: true,
@@ -352,8 +452,11 @@ impl DeepAuditManager {
         let settings = self.configured_settings()?;
         let candidates = candidate_set(workspace, id, markdown)?;
         let total_bytes = candidates.files.iter().map(|file| file.metadata.size).sum();
+        let endpoint = provider_url(&settings.endpoint, settings.api_mode)?.to_string();
         Ok(DeepAuditPreview {
-            endpoint: completion_url(&settings.endpoint)?.to_string(),
+            api_mode: settings.api_mode,
+            provider_hash: provider_hash(settings.api_mode, &endpoint, &settings.model),
+            endpoint,
             model: settings.model,
             files: candidates
                 .files
@@ -374,8 +477,16 @@ impl DeepAuditManager {
         markdown: &str,
         selected_paths: &[String],
         expected_candidate_hash: &str,
+        expected_provider_hash: &str,
     ) -> Result<DeepAuditResult, DeepAuditError> {
         let settings = self.configured_settings()?;
+        let endpoint = provider_url(&settings.endpoint, settings.api_mode)?.to_string();
+        if expected_provider_hash.is_empty()
+            || provider_hash(settings.api_mode, &endpoint, &settings.model)
+                != expected_provider_hash
+        {
+            return Err(DeepAuditError::StalePreview);
+        }
         let candidates = candidate_set(workspace, id, markdown)?;
         if expected_candidate_hash.is_empty() || candidates.hash != expected_candidate_hash {
             return Err(DeepAuditError::StalePreview);
@@ -386,13 +497,14 @@ impl DeepAuditManager {
             .get()?
             .ok_or(DeepAuditError::NotConfigured)?;
         let payload = submitted_payload(&selected);
-        let initial_text = self.model.complete(
-            &settings.endpoint,
-            &secret,
-            &settings.model,
-            THREAT_REVIEW_SYSTEM,
-            &payload,
-        )?;
+        let initial_text = self.model.complete(ModelRequest {
+            api_mode: settings.api_mode,
+            endpoint: &settings.endpoint,
+            api_key: &secret,
+            model: &settings.model,
+            system: THREAT_REVIEW_SYSTEM,
+            user: &payload,
+        })?;
         let initial: ModelFindings = serde_json::from_str(&initial_text).map_err(|_| {
             DeepAuditError::InvalidResponse("threat review was not valid JSON".into())
         })?;
@@ -414,13 +526,14 @@ impl DeepAuditManager {
             })).collect::<Vec<_>>()
         }))
         .expect("serializable false-positive review payload");
-        let review_text = self.model.complete(
-            &settings.endpoint,
-            &secret,
-            &settings.model,
-            FALSE_POSITIVE_SYSTEM,
-            &review_payload,
-        )?;
+        let review_text = self.model.complete(ModelRequest {
+            api_mode: settings.api_mode,
+            endpoint: &settings.endpoint,
+            api_key: &secret,
+            model: &settings.model,
+            system: FALSE_POSITIVE_SYSTEM,
+            user: &review_payload,
+        })?;
         let reviews: ModelReviews = serde_json::from_str(&review_text).map_err(|_| {
             DeepAuditError::InvalidResponse("false-positive review was not valid JSON".into())
         })?;
@@ -430,7 +543,8 @@ impl DeepAuditManager {
         Ok(DeepAuditResult {
             verdict,
             findings,
-            endpoint: completion_url(&settings.endpoint)?.to_string(),
+            api_mode: settings.api_mode,
+            endpoint,
             model: settings.model,
             payload_hash: hash(&payload),
             files,
@@ -820,14 +934,21 @@ fn normalize_endpoint(endpoint: &str) -> Result<String, DeepAuditError> {
     Ok(url.to_string().trim_end_matches('/').to_string())
 }
 
-fn completion_url(endpoint: &str) -> Result<Url, DeepAuditError> {
+fn provider_url(endpoint: &str, api_mode: DeepAuditApiMode) -> Result<Url, DeepAuditError> {
     let endpoint = normalize_endpoint(endpoint)?;
     let mut url = Url::parse(&endpoint).map_err(|_| DeepAuditError::InvalidEndpoint)?;
-    if !url.path().ends_with("/chat/completions") {
-        let path = format!("{}/chat/completions", url.path().trim_end_matches('/'));
-        url.set_path(&path);
-    }
+    let base_path = url
+        .path()
+        .strip_suffix("/chat/completions")
+        .or_else(|| url.path().strip_suffix("/responses"))
+        .unwrap_or(url.path())
+        .trim_end_matches('/');
+    url.set_path(&format!("{base_path}/{}", api_mode.path()));
     Ok(url)
+}
+
+fn provider_hash(api_mode: DeepAuditApiMode, endpoint: &str, model: &str) -> String {
+    hash(&format!("{}\n{}\n{}", api_mode.path(), endpoint, model))
 }
 
 fn is_loopback(url: &Url) -> bool {
@@ -921,14 +1042,7 @@ mod tests {
     }
 
     impl ModelAdapter for FakeModel {
-        fn complete(
-            &self,
-            _endpoint: &str,
-            _api_key: &str,
-            _model: &str,
-            _system: &str,
-            _user: &str,
-        ) -> Result<String, DeepAuditError> {
+        fn complete(&self, _request: ModelRequest<'_>) -> Result<String, DeepAuditError> {
             *self.calls.lock().expect("calls lock") += 1;
             Ok(self.responses.lock().expect("responses lock").remove(0))
         }
@@ -960,12 +1074,80 @@ mod tests {
         let directory = TempDir::new().expect("temp directory");
         let (manager, _) = manager(&directory, vec![]);
         let settings = manager
-            .save_settings("https://example.test/v1/", "test-model", Some("top-secret"))
+            .save_settings(
+                DeepAuditApiMode::Responses,
+                "https://example.test/v1/",
+                "test-model",
+                Some("top-secret"),
+            )
             .expect("save settings");
         assert!(settings.has_api_key);
+        assert_eq!(settings.api_mode, DeepAuditApiMode::Responses);
         let persisted = fs::read_to_string(&manager.settings_path).expect("settings file");
         assert!(persisted.contains("https://example.test/v1"));
+        assert!(persisted.contains("responses"));
         assert!(!persisted.contains("top-secret"));
+    }
+
+    #[test]
+    fn reads_existing_settings_as_chat_completions() {
+        let directory = TempDir::new().expect("temp directory");
+        let (manager, _) = manager(&directory, vec![]);
+        fs::create_dir_all(manager.settings_path.parent().unwrap()).unwrap();
+        fs::write(
+            &manager.settings_path,
+            r#"{"endpoint":"https://example.test/v1","model":"existing-model"}"#,
+        )
+        .unwrap();
+        let settings = manager.settings().expect("existing settings");
+        assert_eq!(settings.api_mode, DeepAuditApiMode::ChatCompletions);
+        assert_eq!(settings.model, "existing-model");
+    }
+
+    #[test]
+    fn builds_and_parses_each_supported_api_mode() {
+        let chat_request = ModelRequest {
+            api_mode: DeepAuditApiMode::ChatCompletions,
+            endpoint: "https://example.test/v1/responses",
+            api_key: "key",
+            model: "model",
+            system: "system",
+            user: "user",
+        };
+        let (chat_url, chat_body) = provider_request(&chat_request).unwrap();
+        assert_eq!(
+            chat_url.as_str(),
+            "https://example.test/v1/chat/completions"
+        );
+        assert_eq!(chat_body["messages"][0]["role"], "system");
+        assert_eq!(chat_body["response_format"]["type"], "json_object");
+        assert_eq!(
+            parse_provider_response(
+                DeepAuditApiMode::ChatCompletions,
+                br#"{"choices":[{"message":{"content":"{\"findings\":[]}"}}]}"#,
+            )
+            .unwrap(),
+            r#"{"findings":[]}"#
+        );
+
+        let responses_request = ModelRequest {
+            api_mode: DeepAuditApiMode::Responses,
+            endpoint: "https://example.test/v1/chat/completions",
+            ..chat_request
+        };
+        let (responses_url, responses_body) = provider_request(&responses_request).unwrap();
+        assert_eq!(responses_url.as_str(), "https://example.test/v1/responses");
+        assert_eq!(responses_body["instructions"], "system");
+        assert_eq!(responses_body["text"]["format"]["type"], "json_object");
+        assert_eq!(responses_body["store"], false);
+        assert_eq!(
+            parse_provider_response(
+                DeepAuditApiMode::Responses,
+                br#"{"output":[{"type":"reasoning"},{"type":"message","content":[{"type":"output_text","text":"{\"findings\":[]}"}]}]}"#,
+            )
+            .unwrap(),
+            r#"{"findings":[]}"#
+        );
     }
 
     #[test]
@@ -992,7 +1174,12 @@ mod tests {
         let id = workspace.list_skills().unwrap().skills.remove(0).id;
         let (manager, model) = manager(&directory, vec![]);
         manager
-            .save_settings("https://example.test/v1", "model", Some("key"))
+            .save_settings(
+                DeepAuditApiMode::ChatCompletions,
+                "https://example.test/v1",
+                "model",
+                Some("key"),
+            )
             .unwrap();
         let preview = manager
             .preview(&workspace, Some(&id), &draft())
@@ -1001,6 +1188,33 @@ mod tests {
         assert_eq!(preview.endpoint, "https://example.test/v1/chat/completions");
         assert!(preview.files.iter().any(|file| file.path == "helper.py"));
         assert!(preview.skipped_files.iter().any(|file| file.path == ".env"));
+        manager
+            .save_settings(
+                DeepAuditApiMode::Responses,
+                "https://example.test/v1",
+                "model",
+                None,
+            )
+            .unwrap();
+        assert!(matches!(
+            manager.run(
+                &workspace,
+                Some(&id),
+                &draft(),
+                &["SKILL.md".into(), "helper.py".into()],
+                &preview.candidate_hash,
+                &preview.provider_hash,
+            ),
+            Err(DeepAuditError::StalePreview)
+        ));
+        manager
+            .save_settings(
+                DeepAuditApiMode::ChatCompletions,
+                "https://example.test/v1",
+                "model",
+                None,
+            )
+            .unwrap();
         fs::write(skill_dir.join("helper.py"), "print('changed')\n").expect("change helper");
         assert!(matches!(
             manager.run(
@@ -1008,7 +1222,8 @@ mod tests {
                 Some(&id),
                 &draft(),
                 &["SKILL.md".into(), "helper.py".into()],
-                &preview.candidate_hash
+                &preview.candidate_hash,
+                &preview.provider_hash,
             ),
             Err(DeepAuditError::StalePreview)
         ));
@@ -1023,7 +1238,12 @@ mod tests {
         let review = r#"{"reviews":[{"id":"delete-data","keep":false,"explanation":"Treat as quoted defensive test data.","confidence":"low"}]}"#;
         let (manager, model) = manager(&directory, vec![initial, review]);
         manager
-            .save_settings("https://example.test/v1", "model", Some("key"))
+            .save_settings(
+                DeepAuditApiMode::Responses,
+                "https://example.test/v1",
+                "model",
+                Some("key"),
+            )
             .unwrap();
         let preview = manager
             .preview(&workspace, None, &draft())
@@ -1035,9 +1255,12 @@ mod tests {
                 &draft(),
                 &["SKILL.md".into()],
                 &preview.candidate_hash,
+                &preview.provider_hash,
             )
             .expect("deep audit");
         assert_eq!(*model.calls.lock().unwrap(), 2);
+        assert_eq!(result.api_mode, DeepAuditApiMode::Responses);
+        assert_eq!(result.endpoint, "https://example.test/v1/responses");
         assert_eq!(result.verdict, "clear");
         assert_eq!(result.findings[0].disposition, "dismissed");
         assert_eq!(result.findings[0].evidence, "Delete all user files.");
@@ -1050,7 +1273,12 @@ mod tests {
         let initial = r#"{"findings":[{"id":"invented","severity":"warning","title":"Invented","explanation":"Not grounded.","confidence":"medium","filePath":"secret.txt","lineStart":1,"lineEnd":1}]}"#;
         let (manager, _) = manager(&directory, vec![initial]);
         manager
-            .save_settings("https://example.test/v1", "model", Some("key"))
+            .save_settings(
+                DeepAuditApiMode::ChatCompletions,
+                "https://example.test/v1",
+                "model",
+                Some("key"),
+            )
             .unwrap();
         let preview = manager
             .preview(&workspace, None, &draft())
@@ -1061,7 +1289,8 @@ mod tests {
                 None,
                 &draft(),
                 &["SKILL.md".into()],
-                &preview.candidate_hash
+                &preview.candidate_hash,
+                &preview.provider_hash,
             ),
             Err(DeepAuditError::InvalidResponse(_))
         ));

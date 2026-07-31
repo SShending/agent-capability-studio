@@ -14,10 +14,10 @@ export const desktop = {
   deleteArchivedSkill: (id, expectedDirectoryRevision, confirmationName) =>
     invoke("delete_archived_skill", { id, expectedDirectoryRevision, confirmationName }),
   getDeepAuditSettings: () => invoke("get_deep_audit_settings"),
-  saveDeepAuditSettings: (endpoint, model, apiKey) =>
-    invoke("save_deep_audit_settings", { endpoint, model, apiKey }),
+  saveDeepAuditSettings: (apiMode, endpoint, model, apiKey) =>
+    invoke("save_deep_audit_settings", { apiMode, endpoint, model, apiKey }),
   clearDeepAuditSettings: () => invoke("clear_deep_audit_settings"),
   previewDeepAudit: (id, markdown) => invoke("preview_deep_audit", { id, markdown }),
-  runDeepAudit: (id, markdown, selectedPaths, expectedCandidateHash) =>
-    invoke("run_deep_audit", { id, markdown, selectedPaths, expectedCandidateHash })
+  runDeepAudit: (id, markdown, selectedPaths, expectedCandidateHash, expectedProviderHash) =>
+    invoke("run_deep_audit", { id, markdown, selectedPaths, expectedCandidateHash, expectedProviderHash })
 };

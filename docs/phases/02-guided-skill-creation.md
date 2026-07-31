@@ -35,8 +35,9 @@ instructions differently, so the editor must derive its form from each
 - Keep Baseline Audit local and immediate. Deep Audit is a separate explicit
   action using a user-configured cloud model; cancellation sends nothing.
 - Use one user-configured OpenAI-compatible provider in the first interface:
-  API Base URL, model name, and API key. Store the API key only in macOS
-  Keychain; never read or reuse Codex authentication.
+  explicit Chat Completions or Responses mode, API Base URL, model name, and
+  API key. Store the API key only in macOS Keychain; never read or reuse Codex
+  authentication.
 - Keep the cloud profile in global Settings, available from the main window and
   `Command+,`; the Skill editor exposes the Deep Audit action but does not own
   application-level provider preferences.
@@ -296,6 +297,12 @@ instructions differently, so the editor must derive its form from each
   checks, four mutations, and no repeated baseline audit. On the owner's real
   catalog, the initial 59-entry development scan took about 832 ms; archive and
   restore each took about 2 ms with no second full scan.
+- Task 2.4 preparation: on 2026-07-31 the owner accepted explicit Chat
+  Completions and Responses modes in global Settings. Existing profiles default
+  to Chat Completions, every consent preview shows the selected mode and derived
+  endpoint, and the Studio never retries through another protocol. An
+  unconfigured Deep Audit action reports the missing configuration without
+  opening Settings automatically.
 - Remaining execution: repeat Task 2.4 in the native app, including one
   user-configured provider run. Rebuild the `.app` once for that unified
   acceptance unless packaging configuration changes.

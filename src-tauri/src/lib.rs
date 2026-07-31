@@ -2,9 +2,9 @@ mod skills;
 
 use serde::Serialize;
 use skills::{
-    AuditResult, Catalog, CreateSkillResult, DeepAuditManager, DeepAuditPreview, DeepAuditResult,
-    DeepAuditSettings, DeleteSkillResult, LifecyclePreview, LifecycleResult, NewSkillPreview,
-    SkillDetail, Workspace, WorkspaceError,
+    AuditResult, Catalog, CreateSkillResult, DeepAuditApiMode, DeepAuditManager, DeepAuditPreview,
+    DeepAuditResult, DeepAuditSettings, DeleteSkillResult, LifecyclePreview, LifecycleResult,
+    NewSkillPreview, SkillDetail, Workspace, WorkspaceError,
 };
 use tauri::{Manager, State};
 
@@ -146,6 +146,7 @@ fn get_deep_audit_settings(state: State<'_, AppState>) -> Result<DeepAuditSettin
 
 #[tauri::command]
 fn save_deep_audit_settings(
+    api_mode: DeepAuditApiMode,
     endpoint: String,
     model: String,
     api_key: Option<String>,
@@ -153,7 +154,7 @@ fn save_deep_audit_settings(
 ) -> Result<DeepAuditSettings, CommandError> {
     state
         .deep_audit
-        .save_settings(&endpoint, &model, api_key.as_deref())
+        .save_settings(api_mode, &endpoint, &model, api_key.as_deref())
         .map_err(Into::into)
 }
 
@@ -182,6 +183,7 @@ async fn run_deep_audit(
     markdown: String,
     selected_paths: Vec<String>,
     expected_candidate_hash: String,
+    expected_provider_hash: String,
     state: State<'_, AppState>,
 ) -> Result<DeepAuditResult, CommandError> {
     let workspace = state.workspace.clone();
@@ -193,6 +195,7 @@ async fn run_deep_audit(
             &markdown,
             &selected_paths,
             &expected_candidate_hash,
+            &expected_provider_hash,
         )
     })
     .await

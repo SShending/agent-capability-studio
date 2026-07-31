@@ -46,6 +46,9 @@ and open-source implementations before recommending or implementing it.
   adapters: finding, evidence, severity, confidence, and verdict.
 - Keep cloud semantic analysis behind a provider adapter; do not couple Audit to
   one vendor's response schema.
+- Require an explicit cloud API mode. Never auto-fallback or retry through a
+  different protocol because that could upload confirmed content again through
+  an endpoint the user did not approve.
 
 ## Technology
 
@@ -124,8 +127,11 @@ and open-source implementations before recommending or implementing it.
 - Require explicit confirmation for installation, lifecycle mutations,
   permanent deletion, overwrites, conflicts, and findings that require manual
   review.
-- Before every cloud Deep Audit, show the provider endpoint and exact files that
-  will leave the machine; cancellation performs no network request.
+- Before every cloud Deep Audit, show the selected API mode, provider endpoint,
+  and exact files that will leave the machine; cancellation performs no network
+  request.
+- Bind cloud consent to the selected mode, derived endpoint, model, and candidate
+  files; recheck both provider and candidate fingerprints before sending.
 - Do not generate persistent HTML reports unless the user explicitly exports one.
 
 ## Engineering
