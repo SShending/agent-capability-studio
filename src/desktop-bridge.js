@@ -16,6 +16,8 @@ export const desktop = {
   getDeepAuditSettings: () => invoke("get_deep_audit_settings"),
   saveDeepAuditSettings: (apiMode, endpoint, model, apiKey) =>
     invoke("save_deep_audit_settings", { apiMode, endpoint, model, apiKey }),
+  testDeepAuditConnection: (apiMode, endpoint, model, apiKey) =>
+    invoke("test_deep_audit_connection", { apiMode, endpoint, model, apiKey }),
   clearDeepAuditSettings: () => invoke("clear_deep_audit_settings"),
   previewDeepAudit: (id, markdown) => invoke("preview_deep_audit", { id, markdown }),
   runDeepAudit: (id, markdown, selectedPaths, expectedCandidateHash, expectedProviderHash) =>

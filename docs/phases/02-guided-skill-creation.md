@@ -303,6 +303,9 @@ instructions differently, so the editor must derive its form from each
   endpoint, and the Studio never retries through another protocol. An
   unconfigured Deep Audit action reports the missing configuration without
   opening Settings automatically.
+- Task 2.4 preparation: Settings can test saved or unsaved provider values with
+  one fixed synthetic request. The test reads no Skill content, persists no
+  unsaved profile or credential, and reports the actual mode and endpoint used.
 - Remaining execution: repeat Task 2.4 in the native app, including one
   user-configured provider run. Rebuild the `.app` once for that unified
   acceptance unless packaging configuration changes.

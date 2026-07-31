@@ -2,9 +2,9 @@ mod skills;
 
 use serde::Serialize;
 use skills::{
-    AuditResult, Catalog, CreateSkillResult, DeepAuditApiMode, DeepAuditManager, DeepAuditPreview,
-    DeepAuditResult, DeepAuditSettings, DeleteSkillResult, LifecyclePreview, LifecycleResult,
-    NewSkillPreview, SkillDetail, Workspace, WorkspaceError,
+    AuditResult, Catalog, CreateSkillResult, DeepAuditApiMode, DeepAuditConnectionResult,
+    DeepAuditManager, DeepAuditPreview, DeepAuditResult, DeepAuditSettings, DeleteSkillResult,
+    LifecyclePreview, LifecycleResult, NewSkillPreview, SkillDetail, Workspace, WorkspaceError,
 };
 use tauri::{Manager, State};
 
@@ -159,6 +159,26 @@ fn save_deep_audit_settings(
 }
 
 #[tauri::command]
+async fn test_deep_audit_connection(
+    api_mode: DeepAuditApiMode,
+    endpoint: String,
+    model: String,
+    api_key: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<DeepAuditConnectionResult, CommandError> {
+    let manager = state.deep_audit.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        manager.test_connection(api_mode, &endpoint, &model, api_key.as_deref())
+    })
+    .await
+    .map_err(|_| CommandError {
+        code: "DEEP_AUDIT_TASK_ERROR".into(),
+        message: "The connection test stopped before completion.".into(),
+    })?
+    .map_err(Into::into)
+}
+
+#[tauri::command]
 fn clear_deep_audit_settings(
     state: State<'_, AppState>,
 ) -> Result<DeepAuditSettings, CommandError> {
@@ -229,6 +249,7 @@ pub fn run() {
             delete_archived_skill,
             get_deep_audit_settings,
             save_deep_audit_settings,
+            test_deep_audit_connection,
             clear_deep_audit_settings,
             preview_deep_audit,
             run_deep_audit

@@ -2787,9 +2787,26 @@ summary:focus-visible {
   font-size: 10px;
 }
 
+.connection-status {
+  min-height: 17px;
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 15px;
+  overflow-wrap: anywhere;
+}
+
+.connection-status.is-success {
+  color: var(--green-dark);
+}
+
+.connection-status.is-error {
+  color: var(--red);
+}
+
 .split-footer {
   display: grid;
-  grid-template-columns: auto 1fr auto auto;
+  grid-template-columns: auto 1fr auto auto auto;
 }
 
 .destructive-text {
@@ -3109,6 +3126,14 @@ summary:focus-visible {
   .secondary-button.destructive-text {
     color: #ff8a84;
     background: transparent;
+  }
+
+  .connection-status.is-success {
+    color: #30d158;
+  }
+
+  .connection-status.is-error {
+    color: #ff6961;
   }
 
   .source-item.is-active {

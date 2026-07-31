@@ -26,6 +26,7 @@ const state = {
   deepAuditPreview: null,
   confirmAction: null,
   confirmRequiredName: null,
+  providerTestSequence: 0,
   toastTimer: null
 };
 
@@ -96,6 +97,8 @@ const elements = {
   deepModel: document.querySelector("#deep-audit-model"),
   deepApiKey: document.querySelector("#deep-audit-api-key"),
   deepCredentialState: document.querySelector("#deep-audit-credential-state"),
+  deepConnectionStatus: document.querySelector("#deep-audit-connection-status"),
+  testDeepConnection: document.querySelector("#test-deep-audit-connection"),
   clearDeepSettings: document.querySelector("#clear-deep-audit-settings"),
   saveDeepSettings: document.querySelector("#save-deep-audit-settings"),
   deepConsentDialog: document.querySelector("#deep-audit-consent-dialog"),
@@ -657,6 +660,13 @@ function formatBytes(bytes) {
   return `${(bytes / 1024).toFixed(bytes < 10240 ? 1 : 0)} KB`;
 }
 
+function clearConnectionTestResult() {
+  state.providerTestSequence += 1;
+  elements.deepConnectionStatus.hidden = true;
+  elements.deepConnectionStatus.textContent = "";
+  elements.deepConnectionStatus.className = "connection-status";
+}
+
 async function openSettings() {
   try {
     if (elements.settingsDialog.open) {
@@ -665,6 +675,7 @@ async function openSettings() {
     }
     const settings = await desktop.getDeepAuditSettings();
     state.deepAuditSettings = settings;
+    clearConnectionTestResult();
     elements.deepApiMode.value = settings.apiMode || "chatCompletions";
     elements.deepEndpoint.value = settings.endpoint;
     elements.deepModel.value = settings.model;
@@ -679,6 +690,35 @@ async function openSettings() {
     refreshIcons();
   } catch (error) {
     showToast(error.message, true);
+  }
+}
+
+async function testDeepAuditConnection() {
+  const sequence = ++state.providerTestSequence;
+  const apiKey = elements.deepApiKey.value.trim() || null;
+  elements.testDeepConnection.disabled = true;
+  elements.testDeepConnection.querySelector("span").textContent = "测试中";
+  elements.deepConnectionStatus.hidden = false;
+  elements.deepConnectionStatus.className = "connection-status";
+  elements.deepConnectionStatus.textContent = "正在连接...";
+  try {
+    const result = await desktop.testDeepAuditConnection(
+      elements.deepApiMode.value,
+      elements.deepEndpoint.value,
+      elements.deepModel.value,
+      apiKey
+    );
+    if (sequence !== state.providerTestSequence) return;
+    const apiMode = deepAuditApiModeLabels[result.apiMode] || result.apiMode;
+    elements.deepConnectionStatus.classList.add("is-success");
+    elements.deepConnectionStatus.textContent = `连接成功 · ${apiMode} · ${result.endpoint}`;
+  } catch (error) {
+    if (sequence !== state.providerTestSequence) return;
+    elements.deepConnectionStatus.classList.add("is-error");
+    elements.deepConnectionStatus.textContent = `连接失败：${error.message}`;
+  } finally {
+    elements.testDeepConnection.disabled = false;
+    elements.testDeepConnection.querySelector("span").textContent = "测试连接";
   }
 }
 
@@ -1126,6 +1166,11 @@ elements.sourceMode.addEventListener("click", () => setEditorMode("source"));
 elements.auditDraft.addEventListener("click", runDraftAudit);
 elements.deepAudit.addEventListener("click", requestDeepAudit);
 elements.settingsForm.addEventListener("submit", saveDeepAuditSettings);
+elements.testDeepConnection.addEventListener("click", testDeepAuditConnection);
+elements.deepApiMode.addEventListener("change", clearConnectionTestResult);
+for (const field of [elements.deepEndpoint, elements.deepModel, elements.deepApiKey]) {
+  field.addEventListener("input", clearConnectionTestResult);
+}
 elements.deepConsentForm.addEventListener("submit", performDeepAudit);
 document.querySelector("#close-settings").addEventListener("click", () => elements.settingsDialog.close());
 document.querySelector("#cancel-settings").addEventListener("click", () => elements.settingsDialog.close());

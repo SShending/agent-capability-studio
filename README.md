@@ -33,7 +33,8 @@ The shipped application does not start a Node HTTP server or require Node.js.
   confirming the exact endpoint and files that will leave the machine; store
   its API key in macOS Keychain.
 - Open global Settings from the toolbar or with `Command+,` to configure the
-  Deep Audit provider and protected credential.
+  Deep Audit provider, test it without sending Skill files, and protect its
+  credential.
 - Prevent stale drafts from overwriting a Skill changed elsewhere.
 - Disable, re-enable, archive, and restore personal Skills without overwriting
   destination directories.

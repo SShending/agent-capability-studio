@@ -132,6 +132,9 @@ and open-source implementations before recommending or implementing it.
   request.
 - Bind cloud consent to the selected mode, derived endpoint, model, and candidate
   files; recheck both provider and candidate fingerprints before sending.
+- Provider connection tests may send only a fixed synthetic prompt through the
+  selected profile. They must never read Skill files, persist unsaved settings,
+  or present connectivity as evidence of model or audit quality.
 - Do not generate persistent HTML reports unless the user explicitly exports one.
 
 ## Engineering

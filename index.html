@@ -313,9 +313,13 @@
           </label>
         </div>
         <p class="credential-state" id="deep-audit-credential-state"></p>
+        <p class="connection-status" id="deep-audit-connection-status" role="status" aria-live="polite" hidden></p>
         <div class="modal-footer split-footer">
           <button class="secondary-button destructive-text" id="clear-deep-audit-settings" type="button">移除配置</button>
           <span></span>
+          <button class="secondary-button" id="test-deep-audit-connection" type="button">
+            <i data-lucide="plug-zap"></i><span>测试连接</span>
+          </button>
           <button class="secondary-button" id="cancel-settings" type="button">取消</button>
           <button class="primary-button" id="save-deep-audit-settings" type="submit">存储到 Keychain</button>
         </div>

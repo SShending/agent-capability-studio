@@ -35,6 +35,10 @@ Chat Completions and Responses.
   draft or supporting file invalidates consent and requires a new preview.
 - Bind consent to a fingerprint of the selected mode, derived endpoint, and
   model. A changed provider profile also requires a new preview.
+- Let the user test a saved or unsaved profile with one fixed synthetic JSON
+  prompt. A test reads no Skill files, persists no unsaved values, returns no
+  provider content, and proves only protocol connectivity and compatible
+  structured output.
 - Make two requests without tools: a source-grounded threat review followed by
   an independent false-positive review. Only evidence whose file and line range
   can be verified against the submitted content enters the result.
