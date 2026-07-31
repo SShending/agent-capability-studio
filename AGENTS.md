@@ -139,8 +139,10 @@ and open-source implementations before recommending or implementing it.
   current-filesystem checks for ownership, containment, destination conflicts,
   and the affected directory revision.
 - After a Studio-owned save, create, move, or delete, update only the affected
-  backend index and frontend state. Reserve full-source discovery for initial
-  indexing and the user's explicit Refresh path for external filesystem changes.
+  backend index and frontend state. Use full-source discovery for initial
+  indexing and the user's explicit Refresh path for external filesystem changes;
+  an accepted mutation contract may additionally require one fresh cross-source
+  conflict scan at final confirmation, as creation and installation do.
 - Verify performance with deterministic invocation-count tests on synthetic
   large catalogs plus timings on the first user's real catalog. Do not rely only
   on subjective responsiveness, elapsed-time thresholds, or small fixtures.
