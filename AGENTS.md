@@ -130,6 +130,20 @@ and open-source implementations before recommending or implementing it.
 - Preserve unrelated user changes and inspect the working tree before editing.
 - Keep mutations behind narrow interfaces and test the same interfaces callers
   use.
+- After correctness-first code adds preview, apply, refresh, and post-action
+  selection layers, inspect the complete I/O call graph before accepting the
+  workflow. Locally reasonable safety checks must not silently multiply the
+  same full-source scan, parse, audit, or directory hash.
+- Separate discovery from mutation authority. Cache catalog discovery, parsing,
+  and unchanged audit evidence; immediately before mutation, perform targeted
+  current-filesystem checks for ownership, containment, destination conflicts,
+  and the affected directory revision.
+- After a Studio-owned save, create, move, or delete, update only the affected
+  backend index and frontend state. Reserve full-source discovery for initial
+  indexing and the user's explicit Refresh path for external filesystem changes.
+- Verify performance with deterministic invocation-count tests on synthetic
+  large catalogs plus timings on the first user's real catalog. Do not rely only
+  on subjective responsiveness, elapsed-time thresholds, or small fixtures.
 - Add focused tests for traversal, symlinks, conflicts, hash mismatches, atomic
   writes, read-only sources, evidence semantics, and mutation gates.
 - Verify each desktop milestone with Rust tests, frontend checks, a real macOS
