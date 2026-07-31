@@ -31,6 +31,8 @@ The shipped application does not start a Node HTTP server or require Node.js.
 - Optionally run a two-pass semantic Deep Audit through a user-configured
   OpenAI-compatible provider after confirming the exact files that will leave
   the machine; store its API key in macOS Keychain.
+- Open global Settings from the toolbar or with `Command+,` to configure the
+  Deep Audit provider and protected credential.
 - Prevent stale drafts from overwriting a Skill changed elsewhere.
 - Disable, re-enable, archive, and restore personal Skills without overwriting
   destination directories.

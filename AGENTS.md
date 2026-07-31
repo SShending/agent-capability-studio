@@ -118,6 +118,9 @@ and open-source implementations before recommending or implementing it.
   hashes, and evidence available one level deeper.
 - Follow familiar macOS hierarchy, interaction, accessibility, reduced-motion,
   reduced-transparency, and dark-mode behavior.
+- Keep provider and credential preferences in global Settings, reachable through
+  a visible control and `Command+,`. Skill editors should contain actions for
+  the current draft, not application-level provider configuration.
 - Require explicit confirmation for installation, lifecycle mutations,
   permanent deletion, overwrites, conflicts, and findings that require manual
   review.

@@ -65,6 +65,9 @@
             <p id="result-summary">正在读取...</p>
           </div>
           <div class="topbar-actions">
+            <button class="icon-button" id="settings-button" type="button" aria-label="设置" title="设置">
+              <i data-lucide="settings-2"></i>
+            </button>
             <button class="icon-button" id="refresh-button" type="button" aria-label="刷新" title="刷新">
               <i data-lucide="refresh-cw"></i>
             </button>
@@ -164,9 +167,6 @@
             <span class="draft-status" id="draft-status">未修改</span>
           </div>
           <div class="workspace-actions">
-            <button class="icon-button" id="deep-audit-settings-button" type="button" aria-label="配置深度审查" title="配置深度审查">
-              <i data-lucide="settings-2"></i>
-            </button>
             <button class="secondary-button" id="deep-audit-button" type="button">
               <i data-lucide="shield-check"></i><span>深度审查</span>
             </button>
@@ -278,17 +278,18 @@
       </div>
     </dialog>
 
-    <dialog class="modal" id="deep-audit-settings-dialog">
-      <form class="modal-shell" id="deep-audit-settings-form">
+    <dialog class="modal" id="settings-dialog">
+      <form class="modal-shell" id="settings-form">
         <div class="modal-header">
           <div>
-            <span class="modal-kicker">云端模型</span>
-            <h2>深度审查配置</h2>
+            <span class="modal-kicker">Agent Skill Studio</span>
+            <h2>设置</h2>
           </div>
-          <button class="icon-button compact" id="close-deep-audit-settings" type="button" aria-label="关闭" title="关闭">
+          <button class="icon-button compact" id="close-settings" type="button" aria-label="关闭" title="关闭">
             <i data-lucide="x"></i>
           </button>
         </div>
+        <h3 class="settings-section-title">深度审查</h3>
         <div class="form-grid provider-form-grid">
           <label class="full">
             <span>OpenAI-compatible API Base URL</span>
@@ -307,7 +308,7 @@
         <div class="modal-footer split-footer">
           <button class="secondary-button destructive-text" id="clear-deep-audit-settings" type="button">移除配置</button>
           <span></span>
-          <button class="secondary-button" id="cancel-deep-audit-settings" type="button">取消</button>
+          <button class="secondary-button" id="cancel-settings" type="button">取消</button>
           <button class="primary-button" id="save-deep-audit-settings" type="submit">存储到 Keychain</button>
         </div>
       </form>

@@ -37,6 +37,9 @@ instructions differently, so the editor must derive its form from each
 - Use one user-configured OpenAI-compatible provider in the first interface:
   API Base URL, model name, and API key. Store the API key only in macOS
   Keychain; never read or reuse Codex authentication.
+- Keep the cloud profile in global Settings, available from the main window and
+  `Command+,`; the Skill editor exposes the Deep Audit action but does not own
+  application-level provider preferences.
 - Require `SKILL.md` in every Deep Audit payload. Let the user explicitly select
   additional eligible text files after showing their paths, sizes, and hashes;
   exclude sensitive, linked, binary, and over-limit files in the desktop core.

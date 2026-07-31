@@ -2718,6 +2718,14 @@ summary:focus-visible {
   grid-template-columns: 1fr;
 }
 
+.settings-section-title {
+  margin: 0 0 12px;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 680;
+  line-height: 17px;
+}
+
 .credential-state {
   min-height: 17px;
   margin: 10px 0 0;

@@ -33,6 +33,7 @@ const elements = {
   sort: document.querySelector("#sort-select"),
   refresh: document.querySelector("#refresh-button"),
   create: document.querySelector("#create-skill-button"),
+  settings: document.querySelector("#settings-button"),
   confirmDialog: document.querySelector("#confirm-dialog"),
   confirmForm: document.querySelector("#confirm-form"),
   confirmTitle: document.querySelector("#confirm-title"),
@@ -61,7 +62,6 @@ const elements = {
   draftSource: document.querySelector("#draft-source"),
   auditDraft: document.querySelector("#audit-draft-button"),
   deepAudit: document.querySelector("#deep-audit-button"),
-  deepAuditSettingsButton: document.querySelector("#deep-audit-settings-button"),
   saveDraft: document.querySelector("#save-draft-button"),
   auditVerdict: document.querySelector("#audit-verdict"),
   auditVerdictBadge: document.querySelector("#audit-verdict-badge"),
@@ -82,8 +82,8 @@ const elements = {
   deepResultSummary: document.querySelector("#deep-result-summary"),
   deepResultMeta: document.querySelector("#deep-result-meta"),
   deepFindingList: document.querySelector("#deep-finding-list"),
-  deepSettingsDialog: document.querySelector("#deep-audit-settings-dialog"),
-  deepSettingsForm: document.querySelector("#deep-audit-settings-form"),
+  settingsDialog: document.querySelector("#settings-dialog"),
+  settingsForm: document.querySelector("#settings-form"),
   deepEndpoint: document.querySelector("#deep-audit-endpoint"),
   deepModel: document.querySelector("#deep-audit-model"),
   deepApiKey: document.querySelector("#deep-audit-api-key"),
@@ -601,8 +601,12 @@ function formatBytes(bytes) {
   return `${(bytes / 1024).toFixed(bytes < 10240 ? 1 : 0)} KB`;
 }
 
-async function openDeepAuditSettings() {
+async function openSettings() {
   try {
+    if (elements.settingsDialog.open) {
+      elements.deepEndpoint.focus();
+      return;
+    }
     const settings = await desktop.getDeepAuditSettings();
     state.deepAuditSettings = settings;
     elements.deepEndpoint.value = settings.endpoint;
@@ -610,10 +614,11 @@ async function openDeepAuditSettings() {
     elements.deepApiKey.value = "";
     elements.deepApiKey.placeholder = settings.hasApiKey ? "已存储；留空可继续使用" : "输入 API key";
     elements.deepCredentialState.textContent = settings.hasApiKey
-      ? "API key 已存储在 macOS Keychain。"
-      : "尚未存储 API key。";
+      ? "API key 已存储在 macOS Keychain，应用不会回显。"
+      : "API key 将存储在 macOS Keychain，应用不会回显。";
     elements.clearDeepSettings.disabled = !settings.hasApiKey && !settings.endpoint && !settings.model;
-    elements.deepSettingsDialog.showModal();
+    elements.settingsDialog.showModal();
+    elements.deepEndpoint.focus();
     refreshIcons();
   } catch (error) {
     showToast(error.message, true);
@@ -631,7 +636,7 @@ async function saveDeepAuditSettings(event) {
       apiKey
     );
     state.deepAuditSettings = settings;
-    elements.deepSettingsDialog.close();
+    elements.settingsDialog.close();
     showToast("深度审查配置已更新。API key 保存在 Keychain。");
   } catch (error) {
     showToast(error.message, true);
@@ -682,7 +687,7 @@ async function requestDeepAudit() {
     const settings = await desktop.getDeepAuditSettings();
     state.deepAuditSettings = settings;
     if (!settings.hasApiKey || !settings.endpoint || !settings.model) {
-      await openDeepAuditSettings();
+      await openSettings();
       return;
     }
     const preview = await desktop.previewDeepAudit(deepAuditEditorId(), state.editor.draftMarkdown);
@@ -990,8 +995,8 @@ function showToast(message, isError = false) {
   clearTimeout(state.toastTimer);
   const toastHost = elements.deepConsentDialog.open
       ? elements.deepConsentDialog
-      : elements.deepSettingsDialog.open
-        ? elements.deepSettingsDialog
+      : elements.settingsDialog.open
+        ? elements.settingsDialog
         : elements.editorDialog.open
           ? elements.editorDialog
           : document.body;
@@ -1058,17 +1063,17 @@ elements.sort.addEventListener("change", () => {
 
 elements.refresh.addEventListener("click", () => loadSkills({ forceRefresh: true }));
 elements.create.addEventListener("click", openNewSkill);
+elements.settings.addEventListener("click", openSettings);
 elements.closeDetail.addEventListener("click", () => elements.detailPanel.classList.remove("is-open"));
 elements.closeEditor.addEventListener("click", requestCloseEditor);
 elements.guidedMode.addEventListener("click", () => setEditorMode("guided"));
 elements.sourceMode.addEventListener("click", () => setEditorMode("source"));
 elements.auditDraft.addEventListener("click", runDraftAudit);
 elements.deepAudit.addEventListener("click", requestDeepAudit);
-elements.deepAuditSettingsButton.addEventListener("click", openDeepAuditSettings);
-elements.deepSettingsForm.addEventListener("submit", saveDeepAuditSettings);
+elements.settingsForm.addEventListener("submit", saveDeepAuditSettings);
 elements.deepConsentForm.addEventListener("submit", performDeepAudit);
-document.querySelector("#close-deep-audit-settings").addEventListener("click", () => elements.deepSettingsDialog.close());
-document.querySelector("#cancel-deep-audit-settings").addEventListener("click", () => elements.deepSettingsDialog.close());
+document.querySelector("#close-settings").addEventListener("click", () => elements.settingsDialog.close());
+document.querySelector("#cancel-settings").addEventListener("click", () => elements.settingsDialog.close());
 document.querySelector("#close-deep-audit-consent").addEventListener("click", () => {
   state.deepAuditPreview = null;
   elements.deepConsentDialog.close();
@@ -1084,7 +1089,7 @@ elements.clearDeepSettings.addEventListener("click", () => {
     label: "确认移除",
     action: async () => {
       state.deepAuditSettings = await desktop.clearDeepAuditSettings();
-      elements.deepSettingsDialog.close();
+      elements.settingsDialog.close();
       showToast("深度审查配置已移除。");
     }
   });
@@ -1158,6 +1163,11 @@ elements.confirmForm.addEventListener("submit", async (event) => {
 
 
 document.addEventListener("keydown", (event) => {
+  if (event.metaKey && !event.altKey && !event.ctrlKey && event.key === ",") {
+    event.preventDefault();
+    openSettings();
+    return;
+  }
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f") {
     event.preventDefault();
     elements.search.focus();
