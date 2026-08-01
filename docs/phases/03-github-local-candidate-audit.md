@@ -31,18 +31,19 @@ Task 3.1 research is recorded in
 [github-acquisition-options.md](../research/github-acquisition-options.md).
 The selected direction is a Rust GitHub snapshot adapter using commit/tree
 metadata and fixed-SHA raw downloads, pending the owner's explicit acceptance.
+The owner accepted this direction on 2026-08-01.
 
 ## Task Breakdown
 
 ### Task 3.1 - Validate GitHub Acquisition Approach
 
-- Status: completed on 2026-08-01; implementation gated on owner acceptance.
+- Status: completed and accepted on 2026-08-01.
 - Evidence: existing products and maintained Git implementations were compared;
   GitHub commit/tree/raw behavior was exercised against a public repository.
 
 ### Task 3.2 - Contained Candidate Staging
 
-- Status: pending
+- Status: completed on 2026-08-01.
 - Outcome: GitHub and local candidates become temporary, hash-verified staged
   manifests without touching managed Skill roots.
 - Verification: traversal, symlink, submodule, duplicate, size, depth, race,
@@ -93,4 +94,8 @@ metadata and fixed-SHA raw downloads, pending the owner's explicit acceptance.
 ## Acceptance Record
 
 - Task 3.1 research completed on 2026-08-01. The implementation direction is
-  awaiting explicit owner acceptance before Task 3.2.
+  accepted by the owner and Task 3.2 may proceed.
+- Task 3.2 completed on 2026-08-01 with an app-owned temporary staging module,
+  fixed-SHA GitHub transport, local file identity checks, bounded manifests,
+  explicit discard commands, and focused Rust fixtures. Candidate staging does
+  not write managed Skill roots or execute candidate content.

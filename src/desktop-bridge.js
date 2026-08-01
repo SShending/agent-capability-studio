@@ -13,6 +13,9 @@ export const desktop = {
     invoke("apply_skill_lifecycle", { id, action, expectedDirectoryRevision }),
   deleteArchivedSkill: (id, expectedDirectoryRevision, confirmationName) =>
     invoke("delete_archived_skill", { id, expectedDirectoryRevision, confirmationName }),
+  stageGithubCandidate: (sourceUrl) => invoke("stage_github_candidate", { sourceUrl }),
+  stageLocalCandidate: (selectedPath) => invoke("stage_local_candidate", { selectedPath }),
+  discardStagedCandidate: (sessionId) => invoke("discard_staged_candidate", { sessionId }),
   getDeepAuditSettings: () => invoke("get_deep_audit_settings"),
   saveDeepAuditSettings: (apiMode, endpoint, model, apiKey) =>
     invoke("save_deep_audit_settings", { apiMode, endpoint, model, apiKey }),

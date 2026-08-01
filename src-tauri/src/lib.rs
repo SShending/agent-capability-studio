@@ -2,15 +2,17 @@ mod skills;
 
 use serde::Serialize;
 use skills::{
-    AuditResult, Catalog, CreateSkillResult, DeepAuditApiMode, DeepAuditConnectionResult,
-    DeepAuditManager, DeepAuditPreview, DeepAuditResult, DeepAuditSettings, DeleteSkillResult,
-    LifecyclePreview, LifecycleResult, NewSkillPreview, SkillDetail, Workspace, WorkspaceError,
+    AuditResult, CandidateManifest, CandidateStager, Catalog, CreateSkillResult, DeepAuditApiMode,
+    DeepAuditConnectionResult, DeepAuditManager, DeepAuditPreview, DeepAuditResult,
+    DeepAuditSettings, DeleteSkillResult, LifecyclePreview, LifecycleResult, NewSkillPreview,
+    SkillDetail, Workspace, WorkspaceError,
 };
 use tauri::{Manager, State};
 
 struct AppState {
     workspace: Workspace,
     deep_audit: DeepAuditManager,
+    candidates: CandidateStager,
 }
 
 #[derive(Debug, Serialize)]
@@ -31,6 +33,15 @@ impl From<WorkspaceError> for CommandError {
 
 impl From<skills::DeepAuditError> for CommandError {
     fn from(error: skills::DeepAuditError) -> Self {
+        Self {
+            code: error.code().to_string(),
+            message: error.to_string(),
+        }
+    }
+}
+
+impl From<skills::CandidateError> for CommandError {
+    fn from(error: skills::CandidateError) -> Self {
         Self {
             code: error.code().to_string(),
             message: error.to_string(),
@@ -140,6 +151,46 @@ fn delete_archived_skill(
 }
 
 #[tauri::command]
+async fn stage_github_candidate(
+    source_url: String,
+    state: State<'_, AppState>,
+) -> Result<CandidateManifest, CommandError> {
+    let stager = state.candidates.clone();
+    tauri::async_runtime::spawn_blocking(move || stager.stage_github(&source_url))
+        .await
+        .map_err(|_| CommandError {
+            code: "CANDIDATE_TASK_ERROR".into(),
+            message: "The candidate acquisition task stopped before completion.".into(),
+        })?
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+async fn stage_local_candidate(
+    selected_path: String,
+    state: State<'_, AppState>,
+) -> Result<CandidateManifest, CommandError> {
+    let stager = state.candidates.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        stager.stage_local(std::path::Path::new(&selected_path))
+    })
+    .await
+    .map_err(|_| CommandError {
+        code: "CANDIDATE_TASK_ERROR".into(),
+        message: "The candidate acquisition task stopped before completion.".into(),
+    })?
+    .map_err(Into::into)
+}
+
+#[tauri::command]
+fn discard_staged_candidate(
+    session_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), CommandError> {
+    state.candidates.discard(&session_id).map_err(Into::into)
+}
+
+#[tauri::command]
 fn get_deep_audit_settings(state: State<'_, AppState>) -> Result<DeepAuditSettings, CommandError> {
     state.deep_audit.settings().map_err(Into::into)
 }
@@ -230,9 +281,12 @@ pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
             let settings_directory = app.path().app_config_dir()?;
+            let candidate_staging_directory =
+                app.path().app_cache_dir()?.join("candidate-staging-v1");
             app.manage(AppState {
                 workspace: Workspace::from_environment(),
                 deep_audit: DeepAuditManager::new(settings_directory),
+                candidates: CandidateStager::new(candidate_staging_directory)?,
             });
             Ok(())
         })
@@ -247,6 +301,9 @@ pub fn run() {
             preview_skill_lifecycle,
             apply_skill_lifecycle,
             delete_archived_skill,
+            stage_github_candidate,
+            stage_local_candidate,
+            discard_staged_candidate,
             get_deep_audit_settings,
             save_deep_audit_settings,
             test_deep_audit_connection,

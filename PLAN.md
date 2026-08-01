@@ -2,12 +2,12 @@
 
 ## Current Position
 
-- Active phase: Phase 3 preparation
+- Active phase: Phase 3 GitHub and local candidate audit
 - In-progress task: none
-- Next task: 3.1 Validate the safest maintained GitHub acquisition approach
+- Next task: 3.3 Present candidate evidence in the desktop GUI
 - Last accepted milestone: Phase 2 guided creation and personal lifecycle
-- Blocking decision: select the Phase 3 acquisition approach through Task 3.1
-  before implementing candidate staging
+- Blocking decision: none; the GitHub snapshot adapter direction was accepted
+  on 2026-08-01
 - Validation item: confirm the final minimum macOS version before public release
 
 ## Phase 1 - Native Desktop Vertical Slice
@@ -95,7 +95,7 @@ Tasks:
 
 - [x] 3.1 Validate the safest maintained GitHub acquisition approach. Research:
   [github-acquisition-options.md](docs/research/github-acquisition-options.md).
-- [ ] 3.2 Implement contained temporary staging for GitHub and local candidates.
+- [x] 3.2 Implement contained temporary staging for GitHub and local candidates.
 - [ ] 3.3 Present files, hashes, compatibility, findings, and exact version.
 - [ ] 3.4 Implement explicit installation with conflict and destination checks.
 - [ ] 3.5 Define and test the external scanner evidence adapter interface.

@@ -34,6 +34,21 @@ A Skill submitted for pre-installation audit from a public GitHub source or a
 local directory.
 _Avoid_: Download, package
 
+**Candidate Source**:
+The public GitHub location or user-selected local directory from which one
+Candidate Skill revision is obtained.
+_Avoid_: Install source, managed Skill root
+
+**Staged Candidate**:
+A temporary, contained snapshot of one Candidate Skill prepared for inspection
+but not installed into any Agent scope.
+_Avoid_: Installed Skill, checkout, cache
+
+**Candidate Manifest**:
+The source revision, paths, sizes, modes, and hashes that identify one exact
+Staged Candidate.
+_Avoid_: Audit Result, installation receipt
+
 **Audit Result**:
 The evidence, findings, confidence, and verdict produced for one exact Skill
 revision, including the named analyzers and cloud provider when applicable.

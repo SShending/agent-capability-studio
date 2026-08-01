@@ -174,8 +174,8 @@ scope until a separate compatibility and credential decision.
 - Record requested URL/ref, resolved SHA, candidate path, per-file SHA-256,
   source URL, skipped entries, limits, and acquisition warnings.
 
-## Open Decision
+## Acceptance
 
-The human owner must accept this GitHub snapshot adapter direction before Task
-3.2 implementation begins. The choice is intentionally narrower than a generic
-Git client and does not replace `npx skills` for users who only want installation.
+The owner accepted this GitHub snapshot adapter direction on 2026-08-01. The
+choice is intentionally narrower than a generic Git client and does not replace
+`npx skills` for users who only want installation.
