@@ -78,6 +78,8 @@ Tasks:
 
 ## Phase 3 - GitHub And Local Candidate Audit
 
+Detailed plan: [03-github-local-candidate-audit.md](docs/phases/03-github-local-candidate-audit.md)
+
 Outcome: a user submits a public GitHub Skill or local directory, reviews exact
 evidence and files in staging, and separately confirms installation.
 
@@ -91,7 +93,8 @@ Acceptance:
 
 Tasks:
 
-- [ ] 3.1 Validate the safest maintained GitHub acquisition approach.
+- [x] 3.1 Validate the safest maintained GitHub acquisition approach. Research:
+  [github-acquisition-options.md](docs/research/github-acquisition-options.md).
 - [ ] 3.2 Implement contained temporary staging for GitHub and local candidates.
 - [ ] 3.3 Present files, hashes, compatibility, findings, and exact version.
 - [ ] 3.4 Implement explicit installation with conflict and destination checks.
