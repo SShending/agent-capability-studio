@@ -3,7 +3,9 @@ mod candidate;
 mod deep_audit;
 mod lifecycle;
 
-pub use candidate::{CandidateError, CandidateManifest, CandidateStager};
+pub use candidate::{
+    CandidateError, CandidateFileContent, CandidateManifest, CandidateReview, CandidateStager,
+};
 pub use deep_audit::{
     DeepAuditApiMode, DeepAuditConnectionResult, DeepAuditError, DeepAuditManager,
     DeepAuditPreview, DeepAuditResult, DeepAuditSettings,

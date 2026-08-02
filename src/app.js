@@ -1,4 +1,5 @@
 import { createIcons, icons } from "lucide";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { desktop } from "./desktop-bridge.js";
 import {
   personalSkillsNeedingAttention,
@@ -27,6 +28,9 @@ const state = {
   confirmAction: null,
   confirmRequiredName: null,
   providerTestSequence: 0,
+  candidate: null,
+  candidateSourceMode: "github",
+  candidateLocalPath: null,
   toastTimer: null
 };
 
@@ -38,6 +42,7 @@ const elements = {
   sort: document.querySelector("#sort-select"),
   refresh: document.querySelector("#refresh-button"),
   create: document.querySelector("#create-skill-button"),
+  reviewCandidate: document.querySelector("#review-candidate-button"),
   settings: document.querySelector("#settings-button"),
   auditStatus: document.querySelector("#audit-status"),
   auditLabel: document.querySelector("#audit-label"),
@@ -90,6 +95,36 @@ const elements = {
   deepResultSummary: document.querySelector("#deep-result-summary"),
   deepResultMeta: document.querySelector("#deep-result-meta"),
   deepFindingList: document.querySelector("#deep-finding-list"),
+  candidateIntakeDialog: document.querySelector("#candidate-intake-dialog"),
+  candidateIntakeForm: document.querySelector("#candidate-intake-form"),
+  candidateGithubMode: document.querySelector("#candidate-github-mode"),
+  candidateLocalMode: document.querySelector("#candidate-local-mode"),
+  candidateGithubField: document.querySelector("#candidate-github-field"),
+  candidateLocalField: document.querySelector("#candidate-local-field"),
+  candidateGithubUrl: document.querySelector("#candidate-github-url"),
+  candidateLocalPath: document.querySelector("#candidate-local-path"),
+  chooseCandidateFolder: document.querySelector("#choose-candidate-folder"),
+  stageCandidate: document.querySelector("#stage-candidate-button"),
+  candidateReviewDialog: document.querySelector("#candidate-review-dialog"),
+  candidateReviewTitle: document.querySelector("#candidate-review-title"),
+  candidateSourceList: document.querySelector("#candidate-source-list"),
+  candidateCompatibilityStatus: document.querySelector("#candidate-compatibility-status"),
+  candidateCompatibilitySummary: document.querySelector("#candidate-compatibility-summary"),
+  candidateCompatibilityList: document.querySelector("#candidate-compatibility-list"),
+  candidateFileCount: document.querySelector("#candidate-file-count"),
+  candidateFiles: document.querySelector("#candidate-files"),
+  candidatePreviewTitle: document.querySelector("#candidate-preview-title"),
+  candidatePreviewMeta: document.querySelector("#candidate-preview-meta"),
+  candidatePreviewEmpty: document.querySelector("#candidate-preview-empty"),
+  candidateFilePreview: document.querySelector("#candidate-file-preview"),
+  candidateAuditVerdict: document.querySelector("#candidate-audit-verdict"),
+  candidateAuditBadge: document.querySelector("#candidate-audit-badge"),
+  candidateAuditSummary: document.querySelector("#candidate-audit-summary"),
+  candidateFindingCount: document.querySelector("#candidate-finding-count"),
+  candidateFindingList: document.querySelector("#candidate-finding-list"),
+  candidateSkippedCount: document.querySelector("#candidate-skipped-count"),
+  candidateSkippedSummary: document.querySelector("#candidate-skipped-summary"),
+  candidateSkippedList: document.querySelector("#candidate-skipped-list"),
   settingsDialog: document.querySelector("#settings-dialog"),
   settingsForm: document.querySelector("#settings-form"),
   deepApiMode: document.querySelector("#deep-audit-api-mode"),
@@ -657,7 +692,283 @@ function renderDeepAuditResult(result) {
 
 function formatBytes(bytes) {
   if (bytes < 1024) return `${bytes} B`;
-  return `${(bytes / 1024).toFixed(bytes < 10240 ? 1 : 0)} KB`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(bytes < 10240 ? 1 : 0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`;
+}
+
+function setCandidateSourceMode(mode) {
+  state.candidateSourceMode = mode;
+  const github = mode === "github";
+  elements.candidateGithubMode.classList.toggle("is-active", github);
+  elements.candidateLocalMode.classList.toggle("is-active", !github);
+  elements.candidateGithubMode.setAttribute("aria-selected", String(github));
+  elements.candidateLocalMode.setAttribute("aria-selected", String(!github));
+  elements.candidateGithubField.hidden = !github;
+  elements.candidateLocalField.hidden = github;
+  if (github) elements.candidateGithubUrl.focus();
+  refreshIcons();
+}
+
+function openCandidateIntake() {
+  if (elements.candidateIntakeDialog.open) return;
+  setCandidateSourceMode("github");
+  elements.candidateIntakeDialog.showModal();
+  elements.candidateGithubUrl.focus();
+  refreshIcons();
+}
+
+async function chooseCandidateFolder() {
+  try {
+    const selected = await openDialog({
+      directory: true,
+      multiple: false,
+      title: "选择包含 SKILL.md 的文件夹"
+    });
+    if (typeof selected !== "string") return;
+    state.candidateLocalPath = selected;
+    elements.candidateLocalPath.textContent = selected;
+  } catch (error) {
+    showToast(error.message, true);
+  }
+}
+
+function candidateSourceRow(label, value) {
+  const row = document.createElement("div");
+  const term = document.createElement("dt");
+  term.textContent = label;
+  const detail = document.createElement("dd");
+  detail.textContent = value;
+  detail.title = value;
+  row.append(term, detail);
+  return row;
+}
+
+function renderCandidateSource(manifest) {
+  const source = manifest.source;
+  const rows = source.kind === "github"
+    ? [
+      candidateSourceRow("来源", "GitHub 公开仓库"),
+      candidateSourceRow("仓库", source.repository),
+      candidateSourceRow("请求分支", source.requestedRef),
+      candidateSourceRow("固定提交", source.resolvedSha),
+      candidateSourceRow("Skill 路径", source.skillPath || "仓库根目录"),
+      candidateSourceRow("候选哈希", manifest.candidateHash)
+    ]
+    : [
+      candidateSourceRow("来源", "本地文件夹"),
+      candidateSourceRow("选择位置", source.selectedPath),
+      candidateSourceRow("候选哈希", manifest.candidateHash)
+    ];
+  elements.candidateSourceList.replaceChildren(...rows);
+}
+
+function renderCandidateCompatibility(compatibility) {
+  const labels = {
+    compatible: "基础兼容",
+    review: "需复核",
+    incompatible: "不兼容"
+  };
+  elements.candidateCompatibilityStatus.textContent = labels[compatibility.status] || compatibility.status;
+  elements.candidateCompatibilityStatus.className = `candidate-status is-${compatibility.status}`;
+  elements.candidateCompatibilitySummary.textContent = compatibility.summary;
+  const rows = compatibility.checks.map((check) => {
+    const row = document.createElement("div");
+    row.className = `candidate-compatibility-row is-${check.status}`;
+    const marker = document.createElement("i");
+    marker.dataset.lucide = check.status === "pass"
+      ? "circle-check"
+      : check.status === "review"
+        ? "circle-alert"
+        : "circle-x";
+    const copy = document.createElement("div");
+    const label = document.createElement("strong");
+    label.textContent = check.label;
+    const detail = document.createElement("p");
+    detail.textContent = check.detail;
+    copy.append(label, detail);
+    row.append(marker, copy);
+    return row;
+  });
+  elements.candidateCompatibilityList.replaceChildren(...rows);
+}
+
+function renderCandidateFiles() {
+  const candidate = state.candidate;
+  if (!candidate) return;
+  const rows = candidate.review.manifest.files.map((file) => {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = `candidate-file-row${candidate.selectedPath === file.path ? " is-selected" : ""}`;
+    row.setAttribute("aria-pressed", String(candidate.selectedPath === file.path));
+    const icon = document.createElement("i");
+    icon.dataset.lucide = file.executable ? "terminal" : "file-text";
+    const copy = document.createElement("span");
+    const path = document.createElement("strong");
+    path.textContent = file.path;
+    const meta = document.createElement("small");
+    meta.textContent = `${formatBytes(file.size)} · SHA-256 ${file.sha256.slice(0, 12)}…${file.executable ? " · 可执行" : ""}`;
+    copy.append(path, meta);
+    row.append(icon, copy);
+    row.addEventListener("click", () => selectCandidateFile(file.path));
+    return row;
+  });
+  elements.candidateFiles.replaceChildren(...rows);
+}
+
+function renderCandidatePreview() {
+  const candidate = state.candidate;
+  const preview = candidate?.preview;
+  if (!candidate?.selectedPath) {
+    elements.candidatePreviewTitle.textContent = "文件预览";
+    elements.candidatePreviewMeta.textContent = "";
+    elements.candidatePreviewEmpty.hidden = false;
+    elements.candidateFilePreview.hidden = true;
+    return;
+  }
+  const file = candidate.review.manifest.files.find((item) => item.path === candidate.selectedPath);
+  elements.candidatePreviewTitle.textContent = candidate.selectedPath;
+  elements.candidatePreviewMeta.textContent = file ? `SHA-256 ${file.sha256.slice(0, 12)}…` : "";
+  if (preview?.loading) {
+    elements.candidatePreviewEmpty.textContent = "正在读取暂存内容。";
+    elements.candidatePreviewEmpty.hidden = false;
+    elements.candidateFilePreview.hidden = true;
+    return;
+  }
+  if (!preview?.isText) {
+    elements.candidatePreviewEmpty.textContent = "该文件不是 UTF-8 文本，无法在此预览。文件哈希仍已列入上方清单。";
+    elements.candidatePreviewEmpty.hidden = false;
+    elements.candidateFilePreview.hidden = true;
+    return;
+  }
+  elements.candidatePreviewEmpty.hidden = true;
+  elements.candidateFilePreview.hidden = false;
+  elements.candidateFilePreview.textContent = preview.content || "";
+}
+
+function renderCandidateAudit(audit) {
+  const verdicts = {
+    clear: ["基础检查未发现已知阻断模式", "可继续", "内置规则未命中问题，不代表候选已通过完整安全审计。"],
+    review: ["需要人工复核", "需复核", "请阅读下方证据，并确认这些行为符合预期。"],
+    block: ["建议阻止", "已阻止", "候选包含结构错误或高影响操作，安装前不应继续。"]
+  };
+  const [title, badge, summary] = verdicts[audit.verdict] || verdicts.review;
+  elements.candidateAuditVerdict.textContent = title;
+  elements.candidateAuditBadge.textContent = badge;
+  elements.candidateAuditBadge.className = `verdict-badge is-${audit.verdict}`;
+  elements.candidateAuditSummary.textContent = summary;
+  elements.candidateFindingCount.textContent = String(audit.findings.length);
+  elements.candidateFindingList.replaceChildren(...audit.findings.map(renderFinding));
+}
+
+function renderCandidateSkipped(entries) {
+  elements.candidateSkippedCount.textContent = String(entries.length);
+  elements.candidateSkippedList.replaceChildren();
+  if (entries.length === 0) {
+    elements.candidateSkippedSummary.textContent = "所有暂存文件都在左侧清单中。不支持的条目会直接中止审查，不会被静默忽略。";
+    return;
+  }
+  elements.candidateSkippedSummary.textContent = "以下条目未被纳入候选内容：";
+  const rows = entries.map((entry) => {
+    const row = document.createElement("p");
+    row.textContent = `${entry.path} · ${entry.reason}`;
+    return row;
+  });
+  elements.candidateSkippedList.replaceChildren(...rows);
+}
+
+function renderCandidateReview() {
+  const candidate = state.candidate;
+  if (!candidate) return;
+  const { review } = candidate;
+  const name = review.audit.document.name || "候选 Skill";
+  elements.candidateReviewTitle.textContent = name;
+  renderCandidateSource(review.manifest);
+  renderCandidateCompatibility(review.compatibility);
+  elements.candidateFileCount.textContent = String(review.manifest.files.length);
+  renderCandidateFiles();
+  renderCandidatePreview();
+  renderCandidateAudit(review.audit);
+  renderCandidateSkipped(review.skippedEntries);
+  refreshIcons();
+}
+
+async function selectCandidateFile(path) {
+  const candidate = state.candidate;
+  if (!candidate) return;
+  candidate.selectedPath = path;
+  const sequence = (candidate.previewSequence || 0) + 1;
+  candidate.previewSequence = sequence;
+  candidate.preview = { loading: true };
+  renderCandidateFiles();
+  renderCandidatePreview();
+  try {
+    const preview = await desktop.readStagedCandidateFile(
+      candidate.review.manifest.sessionId,
+      candidate.review.manifest.candidateHash,
+      path
+    );
+    if (state.candidate !== candidate || candidate.previewSequence !== sequence) return;
+    candidate.preview = preview;
+    renderCandidatePreview();
+  } catch (error) {
+    if (state.candidate !== candidate || candidate.previewSequence !== sequence) return;
+    candidate.preview = null;
+    renderCandidatePreview();
+    showToast(error.message, true);
+  }
+}
+
+async function stageCandidate(event) {
+  event.preventDefault();
+  const github = state.candidateSourceMode === "github";
+  const source = github ? elements.candidateGithubUrl.value.trim() : state.candidateLocalPath;
+  if (!source) {
+    showToast(github ? "请输入公开 GitHub 地址。" : "请选择包含 SKILL.md 的文件夹。", true);
+    return;
+  }
+  let manifest = null;
+  elements.stageCandidate.disabled = true;
+  elements.stageCandidate.querySelector("span").textContent = "正在暂存";
+  try {
+    manifest = github
+      ? await desktop.stageGithubCandidate(source)
+      : await desktop.stageLocalCandidate(source);
+    const review = await desktop.getStagedCandidateReview(manifest.sessionId, manifest.candidateHash);
+    state.candidate = {
+      review,
+      selectedPath: "SKILL.md",
+      preview: null,
+      previewSequence: 0
+    };
+    elements.candidateIntakeDialog.close();
+    renderCandidateReview();
+    elements.candidateReviewDialog.showModal();
+    await selectCandidateFile("SKILL.md");
+  } catch (error) {
+    if (manifest) {
+      try {
+        await desktop.discardStagedCandidate(manifest.sessionId);
+      } catch {
+        // The app clears unused staging sessions on its next launch.
+      }
+    }
+    showToast(error.message, true);
+  } finally {
+    elements.stageCandidate.disabled = false;
+    elements.stageCandidate.querySelector("span").textContent = "暂存并审查";
+  }
+}
+
+async function closeCandidateReview() {
+  const candidate = state.candidate;
+  state.candidate = null;
+  if (elements.candidateReviewDialog.open) elements.candidateReviewDialog.close();
+  if (!candidate) return;
+  try {
+    await desktop.discardStagedCandidate(candidate.review.manifest.sessionId);
+  } catch (error) {
+    showToast(error.message, true);
+  }
 }
 
 function clearConnectionTestResult() {
@@ -1093,8 +1404,12 @@ async function requestSkillLifecycle(action, skill) {
 
 function showToast(message, isError = false) {
   clearTimeout(state.toastTimer);
-  const toastHost = elements.deepConsentDialog.open
-      ? elements.deepConsentDialog
+  const toastHost = elements.candidateReviewDialog.open
+    ? elements.candidateReviewDialog
+    : elements.candidateIntakeDialog.open
+      ? elements.candidateIntakeDialog
+      : elements.deepConsentDialog.open
+    ? elements.deepConsentDialog
       : elements.settingsDialog.open
         ? elements.settingsDialog
         : elements.editorDialog.open
@@ -1158,6 +1473,7 @@ elements.sort.addEventListener("change", () => {
 
 elements.refresh.addEventListener("click", () => loadSkills({ forceRefresh: true }));
 elements.create.addEventListener("click", openNewSkill);
+elements.reviewCandidate.addEventListener("click", openCandidateIntake);
 elements.settings.addEventListener("click", openSettings);
 elements.closeDetail.addEventListener("click", () => elements.detailPanel.classList.remove("is-open"));
 elements.closeEditor.addEventListener("click", requestCloseEditor);
@@ -1165,6 +1481,20 @@ elements.guidedMode.addEventListener("click", () => setEditorMode("guided"));
 elements.sourceMode.addEventListener("click", () => setEditorMode("source"));
 elements.auditDraft.addEventListener("click", runDraftAudit);
 elements.deepAudit.addEventListener("click", requestDeepAudit);
+elements.candidateGithubMode.addEventListener("click", () => setCandidateSourceMode("github"));
+elements.candidateLocalMode.addEventListener("click", () => setCandidateSourceMode("local"));
+elements.chooseCandidateFolder.addEventListener("click", chooseCandidateFolder);
+elements.candidateIntakeForm.addEventListener("submit", stageCandidate);
+document.querySelector("#close-candidate-intake").addEventListener("click", () => elements.candidateIntakeDialog.close());
+document.querySelector("#cancel-candidate-intake").addEventListener("click", () => elements.candidateIntakeDialog.close());
+document.querySelector("#close-candidate-review").addEventListener("click", closeCandidateReview);
+elements.candidateReviewDialog.addEventListener("cancel", (event) => {
+  event.preventDefault();
+  closeCandidateReview();
+});
+elements.candidateReviewDialog.addEventListener("close", () => {
+  if (elements.toast.parentElement !== document.body) document.body.append(elements.toast);
+});
 elements.settingsForm.addEventListener("submit", saveDeepAuditSettings);
 elements.testDeepConnection.addEventListener("click", testDeepAuditConnection);
 elements.deepApiMode.addEventListener("change", clearConnectionTestResult);

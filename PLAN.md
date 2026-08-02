@@ -3,8 +3,8 @@
 ## Current Position
 
 - Active phase: Phase 3 GitHub and local candidate audit
-- In-progress task: none
-- Next task: 3.3 Present candidate evidence in the desktop GUI
+- In-progress task: 3.3 Present candidate evidence in the desktop GUI
+- Next task: 3.4 Implement explicit installation with conflict and destination checks
 - Last accepted milestone: Phase 2 guided creation and personal lifecycle
 - Blocking decision: none; the GitHub snapshot adapter direction was accepted
   on 2026-08-01
@@ -96,7 +96,7 @@ Tasks:
 - [x] 3.1 Validate the safest maintained GitHub acquisition approach. Research:
   [github-acquisition-options.md](docs/research/github-acquisition-options.md).
 - [x] 3.2 Implement contained temporary staging for GitHub and local candidates.
-- [ ] 3.3 Present files, hashes, compatibility, findings, and exact version.
+- [ ] 3.3 Present files, hashes, compatibility, findings, and exact version (implemented; pending first-user acceptance).
 - [ ] 3.4 Implement explicit installation with conflict and destination checks.
 - [ ] 3.5 Define and test the external scanner evidence adapter interface.
 

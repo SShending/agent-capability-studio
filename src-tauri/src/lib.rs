@@ -2,10 +2,10 @@ mod skills;
 
 use serde::Serialize;
 use skills::{
-    AuditResult, CandidateManifest, CandidateStager, Catalog, CreateSkillResult, DeepAuditApiMode,
-    DeepAuditConnectionResult, DeepAuditManager, DeepAuditPreview, DeepAuditResult,
-    DeepAuditSettings, DeleteSkillResult, LifecyclePreview, LifecycleResult, NewSkillPreview,
-    SkillDetail, Workspace, WorkspaceError,
+    AuditResult, CandidateFileContent, CandidateManifest, CandidateReview, CandidateStager,
+    Catalog, CreateSkillResult, DeepAuditApiMode, DeepAuditConnectionResult, DeepAuditManager,
+    DeepAuditPreview, DeepAuditResult, DeepAuditSettings, DeleteSkillResult, LifecyclePreview,
+    LifecycleResult, NewSkillPreview, SkillDetail, Workspace, WorkspaceError,
 };
 use tauri::{Manager, State};
 
@@ -210,6 +210,43 @@ fn save_deep_audit_settings(
 }
 
 #[tauri::command]
+async fn get_staged_candidate_review(
+    session_id: String,
+    expected_candidate_hash: String,
+    state: State<'_, AppState>,
+) -> Result<CandidateReview, CommandError> {
+    let stager = state.candidates.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        stager.review(&session_id, &expected_candidate_hash)
+    })
+    .await
+    .map_err(|_| CommandError {
+        code: "CANDIDATE_TASK_ERROR".into(),
+        message: "The candidate review task stopped before completion.".into(),
+    })?
+    .map_err(Into::into)
+}
+
+#[tauri::command]
+async fn read_staged_candidate_file(
+    session_id: String,
+    expected_candidate_hash: String,
+    path: String,
+    state: State<'_, AppState>,
+) -> Result<CandidateFileContent, CommandError> {
+    let stager = state.candidates.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        stager.read_file(&session_id, &expected_candidate_hash, &path)
+    })
+    .await
+    .map_err(|_| CommandError {
+        code: "CANDIDATE_TASK_ERROR".into(),
+        message: "The candidate file preview task stopped before completion.".into(),
+    })?
+    .map_err(Into::into)
+}
+
+#[tauri::command]
 async fn test_deep_audit_connection(
     api_mode: DeepAuditApiMode,
     endpoint: String,
@@ -279,6 +316,7 @@ async fn run_deep_audit(
 
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let settings_directory = app.path().app_config_dir()?;
             let candidate_staging_directory =
@@ -303,6 +341,8 @@ pub fn run() {
             delete_archived_skill,
             stage_github_candidate,
             stage_local_candidate,
+            get_staged_candidate_review,
+            read_staged_candidate_file,
             discard_staged_candidate,
             get_deep_audit_settings,
             save_deep_audit_settings,

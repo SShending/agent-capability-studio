@@ -15,6 +15,10 @@ export const desktop = {
     invoke("delete_archived_skill", { id, expectedDirectoryRevision, confirmationName }),
   stageGithubCandidate: (sourceUrl) => invoke("stage_github_candidate", { sourceUrl }),
   stageLocalCandidate: (selectedPath) => invoke("stage_local_candidate", { selectedPath }),
+  getStagedCandidateReview: (sessionId, expectedCandidateHash) =>
+    invoke("get_staged_candidate_review", { sessionId, expectedCandidateHash }),
+  readStagedCandidateFile: (sessionId, expectedCandidateHash, path) =>
+    invoke("read_staged_candidate_file", { sessionId, expectedCandidateHash, path }),
   discardStagedCandidate: (sessionId) => invoke("discard_staged_candidate", { sessionId }),
   getDeepAuditSettings: () => invoke("get_deep_audit_settings"),
   saveDeepAuditSettings: (apiMode, endpoint, model, apiKey) =>

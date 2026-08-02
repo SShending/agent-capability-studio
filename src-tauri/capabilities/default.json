@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "The desktop window only needs its Rust command interface.",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": ["core:default", "dialog:default"]
 }

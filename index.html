@@ -66,6 +66,9 @@
             <p id="result-summary">正在读取...</p>
           </div>
           <div class="topbar-actions">
+            <button class="secondary-button candidate-entry-button" id="review-candidate-button" type="button">
+              <i data-lucide="file-search-2"></i><span>审查候选</span>
+            </button>
             <button class="icon-button" id="settings-button" type="button" aria-label="设置" title="设置">
               <i data-lucide="settings-2"></i>
             </button>
@@ -273,6 +276,118 @@
                   <pre id="diff-after"></pre>
                 </div>
               </div>
+            </section>
+          </aside>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog class="modal candidate-intake-dialog" id="candidate-intake-dialog">
+      <form class="modal-shell" id="candidate-intake-form">
+        <div class="modal-header">
+          <div>
+            <span class="modal-kicker">候选 Skill</span>
+            <h2>审查安装前内容</h2>
+          </div>
+          <button class="icon-button compact" id="close-candidate-intake" type="button" aria-label="关闭" title="关闭">
+            <i data-lucide="x"></i>
+          </button>
+        </div>
+        <div class="segmented-control candidate-source-control" role="tablist" aria-label="候选来源">
+          <button class="is-active" id="candidate-github-mode" type="button" role="tab" aria-selected="true">
+            <i data-lucide="github"></i><span>GitHub</span>
+          </button>
+          <button id="candidate-local-mode" type="button" role="tab" aria-selected="false">
+            <i data-lucide="folder-open"></i><span>本地文件夹</span>
+          </button>
+        </div>
+        <label class="candidate-input-field" id="candidate-github-field">
+          <span>公开 GitHub 地址</span>
+          <input id="candidate-github-url" type="url" placeholder="https://github.com/owner/repo/tree/main/skill" autocomplete="url" />
+        </label>
+        <div class="candidate-input-field" id="candidate-local-field" hidden>
+          <span>Skill 文件夹</span>
+          <div class="candidate-path-picker">
+            <code id="candidate-local-path">尚未选择文件夹</code>
+            <button class="secondary-button" id="choose-candidate-folder" type="button">
+              <i data-lucide="folder-open"></i><span>选择文件夹</span>
+            </button>
+          </div>
+        </div>
+        <p class="candidate-intake-note">内容只会暂存到应用缓存并进行本地检查，不会安装或运行其中的文件。</p>
+        <div class="modal-footer">
+          <button class="secondary-button" id="cancel-candidate-intake" type="button">取消</button>
+          <button class="primary-button" id="stage-candidate-button" type="submit">
+            <i data-lucide="scan-search"></i><span>暂存并审查</span>
+          </button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="workspace-dialog candidate-review-dialog" id="candidate-review-dialog">
+      <div class="workspace-shell">
+        <header class="workspace-header">
+          <div class="workspace-title">
+            <button class="icon-button" id="close-candidate-review" type="button" aria-label="关闭候选审查" title="关闭">
+              <i data-lucide="x"></i>
+            </button>
+            <div>
+              <span class="workspace-kicker">候选审查</span>
+              <h2 id="candidate-review-title">候选 Skill</h2>
+            </div>
+            <span class="draft-status" id="candidate-review-state">临时暂存</span>
+          </div>
+          <div class="workspace-actions candidate-review-actions">
+            <span class="candidate-no-install"><i data-lucide="shield-check"></i>尚未安装</span>
+          </div>
+        </header>
+
+        <div class="candidate-review-body">
+          <section class="candidate-evidence-pane" aria-label="候选文件与来源">
+            <section class="candidate-section candidate-source-section">
+              <div class="review-section-title"><span>来源与版本</span></div>
+              <dl class="candidate-source-list" id="candidate-source-list"></dl>
+            </section>
+
+            <section class="candidate-section">
+              <div class="review-section-title"><span>Codex 兼容性</span><strong id="candidate-compatibility-status">检查中</strong></div>
+              <p class="candidate-compatibility-summary" id="candidate-compatibility-summary"></p>
+              <div class="candidate-compatibility-list" id="candidate-compatibility-list"></div>
+            </section>
+
+            <section class="candidate-section candidate-files-section">
+              <div class="review-section-title"><span>暂存文件</span><strong id="candidate-file-count">0</strong></div>
+              <div class="candidate-files" id="candidate-files"></div>
+            </section>
+
+            <section class="candidate-preview-section" aria-label="候选文件预览">
+              <div class="review-section-title"><span id="candidate-preview-title">文件预览</span><span id="candidate-preview-meta"></span></div>
+              <div class="candidate-preview-empty" id="candidate-preview-empty">选择一个文件以查看暂存内容。</div>
+              <pre class="candidate-file-preview" id="candidate-file-preview" hidden></pre>
+            </section>
+          </section>
+
+          <aside class="review-pane candidate-review-pane" aria-label="候选审查结果">
+            <section class="verdict-section">
+              <div class="review-heading">
+                <div>
+                  <span>基础检查结论</span>
+                  <h3 id="candidate-audit-verdict">正在检查</h3>
+                </div>
+                <span class="verdict-badge is-loading" id="candidate-audit-badge">检查中</span>
+              </div>
+              <p id="candidate-audit-summary">正在读取暂存的 SKILL.md。</p>
+            </section>
+
+            <section class="finding-section">
+              <div class="review-section-title"><span>发现与证据</span><strong id="candidate-finding-count">0</strong></div>
+              <div class="finding-list" id="candidate-finding-list"></div>
+            </section>
+
+            <section class="candidate-skipped-section">
+              <div class="review-section-title"><span>未纳入的条目</span><strong id="candidate-skipped-count">0</strong></div>
+              <p id="candidate-skipped-summary"></p>
+              <div id="candidate-skipped-list"></div>
             </section>
           </aside>
         </div>

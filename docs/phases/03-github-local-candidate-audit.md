@@ -51,7 +51,7 @@ The owner accepted this direction on 2026-08-01.
 
 ### Task 3.3 - Candidate Review Presentation
 
-- Status: pending
+- Status: implemented on 2026-08-02; pending first-user acceptance.
 - Outcome: a non-programmer can see repository, requested ref, resolved commit,
   exact path, files, hashes, compatibility, skipped entries, and findings.
 
@@ -99,3 +99,8 @@ The owner accepted this direction on 2026-08-01.
   fixed-SHA GitHub transport, local file identity checks, bounded manifests,
   explicit discard commands, and focused Rust fixtures. Candidate staging does
   not write managed Skill roots or execute candidate content.
+- Task 3.3 was implemented on 2026-08-02. The desktop flow stages a public
+  GitHub URL or user-selected local folder, presents source/version/file/hash,
+  Codex compatibility, baseline findings, and text previews from the staged
+  manifest only, then discards the session when the review closes. It awaits
+  first-user visual acceptance before Task 3.4 starts.

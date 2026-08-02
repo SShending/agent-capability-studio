@@ -8,7 +8,7 @@ use reqwest::{
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     fs::{self, File, OpenOptions},
     io::{Read, Write},
     path::{Component, Path, PathBuf},
@@ -53,6 +53,10 @@ pub enum CandidateError {
     Github(String),
     #[error("This staged candidate session is not available.")]
     UnknownSession,
+    #[error("The staged candidate changed. Start the review again.")]
+    ChangedSession,
+    #[error("This file is not part of the staged candidate.")]
+    UnknownFile,
     #[error("Unable to stage the candidate: {0}")]
     Io(#[from] std::io::Error),
 }
@@ -73,6 +77,8 @@ impl CandidateError {
             Self::RateLimited(_) => "GITHUB_RATE_LIMIT",
             Self::Github(_) => "GITHUB_ACQUISITION_ERROR",
             Self::UnknownSession => "UNKNOWN_CANDIDATE_SESSION",
+            Self::ChangedSession => "STALE_CANDIDATE",
+            Self::UnknownFile => "UNKNOWN_CANDIDATE_FILE",
             Self::Io(_) => "CANDIDATE_IO_ERROR",
         }
     }
@@ -111,6 +117,48 @@ pub struct CandidateFile {
     pub executable: bool,
 }
 
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CandidateReview {
+    pub manifest: CandidateManifest,
+    pub compatibility: CandidateCompatibility,
+    pub audit: super::AuditResult,
+    pub skipped_entries: Vec<CandidateSkippedEntry>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CandidateCompatibility {
+    pub agent: String,
+    pub status: String,
+    pub summary: String,
+    pub checks: Vec<CandidateCompatibilityCheck>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CandidateCompatibilityCheck {
+    pub id: String,
+    pub label: String,
+    pub status: String,
+    pub detail: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CandidateSkippedEntry {
+    pub path: String,
+    pub reason: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CandidateFileContent {
+    pub path: String,
+    pub content: Option<String>,
+    pub is_text: bool,
+}
+
 #[derive(Clone)]
 pub struct CandidateStager {
     store: Arc<StagingStore>,
@@ -119,7 +167,7 @@ pub struct CandidateStager {
 
 struct StagingStore {
     root: PathBuf,
-    sessions: Mutex<HashSet<String>>,
+    sessions: Mutex<HashMap<String, CandidateManifest>>,
 }
 
 impl Drop for StagingStore {
@@ -141,7 +189,7 @@ impl CandidateStager {
         Ok(Self {
             store: Arc::new(StagingStore {
                 root,
-                sessions: Mutex::new(HashSet::new()),
+                sessions: Mutex::new(HashMap::new()),
             }),
             github,
         })
@@ -254,24 +302,116 @@ impl CandidateStager {
         self.finish_or_cleanup(&session_id, &session_path, result)
     }
 
+    pub fn review(
+        &self,
+        session_id: &str,
+        expected_candidate_hash: &str,
+    ) -> Result<CandidateReview, CandidateError> {
+        let manifest = self.session_manifest(session_id, expected_candidate_hash)?;
+        let directory = self.session_directory(session_id)?;
+        let mut skill_markdown = None;
+        for file in &manifest.files {
+            let bytes = read_verified_staged_file(&directory, file)?;
+            if file.path == "SKILL.md" {
+                skill_markdown = Some(bytes);
+            }
+        }
+        let skill_markdown = skill_markdown.ok_or(CandidateError::MissingSkillDocument)?;
+        let audit = match String::from_utf8(skill_markdown) {
+            Ok(markdown) => super::audit(&markdown, "", ""),
+            Err(error) => non_text_skill_audit(error.as_bytes()),
+        };
+        Ok(CandidateReview {
+            compatibility: compatibility_for(&manifest, &audit),
+            manifest,
+            audit,
+            // v0.1 rejects unsupported entries during acquisition rather than omitting them.
+            skipped_entries: Vec::new(),
+        })
+    }
+
+    pub fn read_file(
+        &self,
+        session_id: &str,
+        expected_candidate_hash: &str,
+        path: &str,
+    ) -> Result<CandidateFileContent, CandidateError> {
+        let manifest = self.session_manifest(session_id, expected_candidate_hash)?;
+        let path = validated_relative_string(path)?;
+        let file = manifest
+            .files
+            .iter()
+            .find(|file| file.path == path)
+            .ok_or(CandidateError::UnknownFile)?;
+        let bytes = read_verified_staged_file(&self.session_directory(session_id)?, file)?;
+        match String::from_utf8(bytes) {
+            Ok(content) => Ok(CandidateFileContent {
+                path,
+                content: Some(content),
+                is_text: true,
+            }),
+            Err(_) => Ok(CandidateFileContent {
+                path,
+                content: None,
+                is_text: false,
+            }),
+        }
+    }
+
     pub fn discard(&self, session_id: &str) -> Result<(), CandidateError> {
         let sessions = self
             .store
             .sessions
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        if !sessions.contains(session_id) {
+        if !sessions.contains_key(session_id) {
             return Err(CandidateError::UnknownSession);
         }
-        let path = self.store.root.join(session_id);
         drop(sessions);
-        remove_session_path(&path)?;
+        remove_session_path(&self.session_directory(session_id)?)?;
         self.store
             .sessions
             .lock()
             .unwrap_or_else(|error| error.into_inner())
             .remove(session_id);
         Ok(())
+    }
+
+    fn session_manifest(
+        &self,
+        session_id: &str,
+        expected_candidate_hash: &str,
+    ) -> Result<CandidateManifest, CandidateError> {
+        let manifest = self
+            .store
+            .sessions
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .get(session_id)
+            .cloned()
+            .ok_or(CandidateError::UnknownSession)?;
+        if expected_candidate_hash.is_empty() || expected_candidate_hash != manifest.candidate_hash
+        {
+            return Err(CandidateError::ChangedSession);
+        }
+        Ok(manifest)
+    }
+
+    fn session_directory(&self, session_id: &str) -> Result<PathBuf, CandidateError> {
+        if session_id.is_empty() || session_id.contains(['/', '\\', '\0']) {
+            return Err(CandidateError::UnknownSession);
+        }
+        let directory = self.store.root.join(session_id);
+        let metadata =
+            fs::symlink_metadata(&directory).map_err(|_| CandidateError::ChangedSession)?;
+        if metadata.file_type().is_symlink() || !metadata.is_dir() {
+            return Err(CandidateError::ChangedSession);
+        }
+        let canonical = fs::canonicalize(directory).map_err(|_| CandidateError::ChangedSession)?;
+        if !canonical.starts_with(&self.store.root) {
+            return Err(CandidateError::ChangedSession);
+        }
+        Ok(canonical)
     }
 
     fn resolve_target_tree(
@@ -351,7 +491,7 @@ impl CandidateStager {
                     .sessions
                     .lock()
                     .unwrap_or_else(|error| error.into_inner())
-                    .insert(session_id.to_owned());
+                    .insert(session_id.to_owned(), manifest.clone());
                 Ok(manifest)
             }
             Err(error) => {
@@ -587,6 +727,174 @@ fn write_staged_file(root: &Path, relative: &str, bytes: &[u8]) -> Result<(), Ca
     permissions.set_readonly(true);
     fs::set_permissions(destination, permissions)?;
     Ok(())
+}
+
+fn read_verified_staged_file(root: &Path, file: &CandidateFile) -> Result<Vec<u8>, CandidateError> {
+    let relative = validated_relative_string(&file.path)?;
+    let path = root.join(&relative);
+    if !path.starts_with(root) {
+        return Err(CandidateError::ChangedSession);
+    }
+    let metadata = fs::symlink_metadata(&path).map_err(|_| CandidateError::ChangedSession)?;
+    if metadata.file_type().is_symlink()
+        || !metadata.is_file()
+        || metadata.len() != file.size as u64
+    {
+        return Err(CandidateError::ChangedSession);
+    }
+    let bytes = read_limited(File::open(path)?, MAX_FILE_BYTES, || {
+        CandidateError::ChangedSession
+    })?;
+    if bytes.len() != file.size || sha256(&bytes) != file.sha256 {
+        return Err(CandidateError::ChangedSession);
+    }
+    Ok(bytes)
+}
+
+fn non_text_skill_audit(bytes: &[u8]) -> super::AuditResult {
+    super::AuditResult {
+        verdict: "block".into(),
+        findings: vec![super::Finding {
+            id: "non-text-skill-document".into(),
+            severity: "blocker".into(),
+            title: "SKILL.md 不是可读取的文本".into(),
+            explanation: "Codex Skill 的根说明文件必须是 UTF-8 文本。".into(),
+            evidence: "SKILL.md 无法按 UTF-8 文本读取。".into(),
+            confidence: "high".into(),
+            source: "baseline".into(),
+            file_path: Some("SKILL.md".into()),
+            line_start: None,
+            line_end: None,
+            disposition: "confirmed".into(),
+            review_note: None,
+        }],
+        content_hash: sha256(bytes),
+        document: super::SkillDocument {
+            has_frontmatter: false,
+            name: String::new(),
+            description: String::new(),
+            body: String::new(),
+        },
+        diff: super::Diff {
+            changed: false,
+            start_line: 0,
+            added_count: 0,
+            removed_count: 0,
+            before: Vec::new(),
+            after: Vec::new(),
+            truncated: false,
+        },
+    }
+}
+
+fn compatibility_for(
+    manifest: &CandidateManifest,
+    audit: &super::AuditResult,
+) -> CandidateCompatibility {
+    let non_text = audit
+        .findings
+        .iter()
+        .any(|finding| finding.id == "non-text-skill-document");
+    let document = &audit.document;
+    let executable_count = manifest.files.iter().filter(|file| file.executable).count();
+    let mut checks = vec![CandidateCompatibilityCheck {
+        id: "staged-integrity".into(),
+        label: "暂存文件完整性".into(),
+        status: "pass".into(),
+        detail: format!("{} 个文件与当前 SHA-256 清单一致。", manifest.files.len()),
+    }];
+    checks.push(CandidateCompatibilityCheck {
+        id: "skill-document-text".into(),
+        label: "SKILL.md 文本格式".into(),
+        status: if non_text { "fail" } else { "pass" }.into(),
+        detail: if non_text {
+            "必须使用 UTF-8 文本，当前文件不能被 Codex 读取。".into()
+        } else {
+            "根说明文件可以作为 UTF-8 文本读取。".into()
+        },
+    });
+    checks.push(CandidateCompatibilityCheck {
+        id: "frontmatter".into(),
+        label: "基本信息".into(),
+        status: if !non_text && document.has_frontmatter {
+            "pass"
+        } else {
+            "fail"
+        }
+        .into(),
+        detail: if document.has_frontmatter && !non_text {
+            "找到名称和用途的 frontmatter。".into()
+        } else {
+            "根文件开头需要以 --- 包围基本信息。".into()
+        },
+    });
+    checks.push(CandidateCompatibilityCheck {
+        id: "skill-name".into(),
+        label: "Skill 名称".into(),
+        status: if !non_text && super::valid_name(&document.name) {
+            "pass"
+        } else {
+            "fail"
+        }
+        .into(),
+        detail: if super::valid_name(&document.name) {
+            format!("名称“{}”符合 Codex 命名规则。", document.name)
+        } else {
+            "名称只能使用小写字母、数字和单个连字符。".into()
+        },
+    });
+    checks.push(CandidateCompatibilityCheck {
+        id: "description".into(),
+        label: "用途与触发条件".into(),
+        status: if !non_text && !document.description.trim().is_empty() {
+            "pass"
+        } else {
+            "fail"
+        }
+        .into(),
+        detail: if document.description.trim().is_empty() {
+            "缺少用途说明，Codex 无法判断何时使用。".into()
+        } else if super::explicit_trigger(&document.name, &document.description) {
+            "采用明确点名触发。".into()
+        } else {
+            "采用按意图触发，这也是受支持的策略。".into()
+        },
+    });
+    checks.push(CandidateCompatibilityCheck {
+        id: "executable-files".into(),
+        label: "可执行支持文件".into(),
+        status: if executable_count == 0 {
+            "pass"
+        } else {
+            "review"
+        }
+        .into(),
+        detail: if executable_count == 0 {
+            "没有标记为可执行的支持文件。".into()
+        } else {
+            format!(
+                "包含 {executable_count} 个可执行文件。审查过程不会运行它们，请在安装前确认用途。"
+            )
+        },
+    });
+    let status = if checks.iter().any(|check| check.status == "fail") {
+        "incompatible"
+    } else if checks.iter().any(|check| check.status == "review") {
+        "review"
+    } else {
+        "compatible"
+    };
+    let summary = match status {
+        "incompatible" => "当前文件结构不满足 Codex Skill 的基本要求。".into(),
+        "review" => "可以继续查看，但可执行支持文件需要在安装前人工确认。".into(),
+        _ => "暂存结构符合 Codex Skill 的基础兼容性要求。".into(),
+    };
+    CandidateCompatibility {
+        agent: "Codex".into(),
+        status: status.into(),
+        summary,
+        checks,
+    }
 }
 
 fn read_limited(
@@ -1119,6 +1427,82 @@ mod tests {
         stager.discard(&manifest.session_id).unwrap();
         assert!(!staged.exists());
         assert!(source.join("SKILL.md").exists());
+    }
+
+    #[test]
+    fn review_is_hash_bound_and_only_reads_manifest_files() {
+        let directory = TempDir::new().unwrap();
+        let source = directory.path().join("source");
+        fs::create_dir_all(source.join("scripts")).unwrap();
+        fs::write(
+            source.join("SKILL.md"),
+            "---\nname: demo\ndescription: Use this Skill when reviewing a demo.\n---\n\n# Demo\n\nRead the staged files and explain the evidence before any installation decision.\n",
+        )
+        .unwrap();
+        fs::write(source.join("scripts/helper.txt"), "local helper\n").unwrap();
+        let stager = stager(&directory, Arc::new(FakeGithub::default()));
+        let manifest = stager.stage_local(&source).unwrap();
+
+        let review = stager
+            .review(&manifest.session_id, &manifest.candidate_hash)
+            .unwrap();
+        assert_eq!(review.compatibility.agent, "Codex");
+        assert_eq!(review.compatibility.status, "compatible");
+        assert!(review.skipped_entries.is_empty());
+        assert_eq!(review.manifest.session_id, manifest.session_id);
+        let content = stager
+            .read_file(
+                &manifest.session_id,
+                &manifest.candidate_hash,
+                "scripts/helper.txt",
+            )
+            .unwrap();
+        assert_eq!(content.content.as_deref(), Some("local helper\n"));
+        assert!(matches!(
+            stager.read_file(&manifest.session_id, "wrong", "scripts/helper.txt"),
+            Err(CandidateError::ChangedSession)
+        ));
+        assert!(matches!(
+            stager.read_file(
+                &manifest.session_id,
+                &manifest.candidate_hash,
+                "outside.txt"
+            ),
+            Err(CandidateError::UnknownFile)
+        ));
+    }
+
+    #[test]
+    fn review_detects_staging_changes_and_binary_file_previews() {
+        let directory = TempDir::new().unwrap();
+        let source = directory.path().join("source");
+        fs::create_dir_all(&source).unwrap();
+        fs::write(
+            source.join("SKILL.md"),
+            "---\nname: demo\ndescription: Use when viewing a demo candidate.\n---\n\n# Demo\n\nThese instructions are long enough for the basic structure check.\n",
+        )
+        .unwrap();
+        fs::write(source.join("asset.bin"), [0xff, 0x00, 0x80]).unwrap();
+        let stager = stager(&directory, Arc::new(FakeGithub::default()));
+        let manifest = stager.stage_local(&source).unwrap();
+
+        let binary = stager
+            .read_file(&manifest.session_id, &manifest.candidate_hash, "asset.bin")
+            .unwrap();
+        assert!(!binary.is_text);
+        assert!(binary.content.is_none());
+
+        let staged_skill = stager
+            .store
+            .root
+            .join(&manifest.session_id)
+            .join("SKILL.md");
+        fs::remove_file(&staged_skill).unwrap();
+        fs::write(staged_skill, "changed").unwrap();
+        assert!(matches!(
+            stager.review(&manifest.session_id, &manifest.candidate_hash),
+            Err(CandidateError::ChangedSession)
+        ));
     }
 
     #[cfg(unix)]
