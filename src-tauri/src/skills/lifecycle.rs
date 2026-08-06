@@ -135,6 +135,10 @@ impl Workspace {
         if action == LifecycleAction::Delete {
             return Err(WorkspaceError::LifecycleNotAllowed);
         }
+        let _mutation = self
+            .mutations
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         let mutation_started = Instant::now();
         let skill = self.find_skill_current(id)?;
         let target_source = action
@@ -204,6 +208,10 @@ impl Workspace {
         expected_directory_revision: &str,
         confirmation_name: &str,
     ) -> Result<DeleteSkillResult, WorkspaceError> {
+        let _mutation = self
+            .mutations
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         let mutation_started = Instant::now();
         let skill = self.find_skill_current(id)?;
         if skill.source != Source::Archive {

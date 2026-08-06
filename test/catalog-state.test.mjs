@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  addCatalogSkill,
+  applyInstallOutcome,
   personalSkillsNeedingAttention,
   removeCatalogSkill,
   replaceCatalogSkill
@@ -59,6 +61,44 @@ test("unknown removals leave the catalog unchanged", () => {
   const result = removeCatalogSkill([personal], counts, "missing");
   assert.deepEqual(result.skills, [personal]);
   assert.deepEqual(result.counts, counts);
+});
+
+test("adds an installed Skill once and updates catalog counts", () => {
+  const installed = { id: "new-id", source: "personal", hasBlockingFindings: false };
+  const result = addCatalogSkill([personal], counts, installed);
+  assert.deepEqual(result.skills.map((skill) => skill.id), ["personal-id", "new-id"]);
+  assert.deepEqual(result.counts, { ...counts, total: 3, personal: 2 });
+
+  const duplicate = addCatalogSkill(result.skills, result.counts, installed);
+  assert.deepEqual(duplicate, result);
+});
+
+test("applies the flattened Skill detail returned by a Bundle install receipt", () => {
+  const previous = {
+    id: "personal:demo-old",
+    source: "personal",
+    displayName: "Old Demo",
+    hasBlockingFindings: false
+  };
+  const installed = {
+    id: "personal:demo-new",
+    source: "personal",
+    displayName: "Imported Demo",
+    hasBlockingFindings: false
+  };
+  const result = applyInstallOutcome([previous], {
+    total: 1,
+    personal: 1,
+    needsAttention: 0
+  }, {
+    priorSkillId: previous.id,
+    skill: installed
+  });
+
+  assert.equal(result.skills.length, 1);
+  assert.equal(result.skills[0].displayName, "Imported Demo");
+  assert.equal(result.skills[0].id, "personal:demo-new");
+  assert.equal(result.counts.personal, 1);
 });
 
 test("lists named personal Skills needing attention in display order", () => {

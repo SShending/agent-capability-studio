@@ -85,16 +85,17 @@ The selected flow is therefore:
    symlink (`120000`), submodule (`160000`), and unsupported entry types before
    downloads; preserve executable mode as evidence without executing it.
 4. Validate tree paths, counts, depths, and declared sizes.
-5. Download accepted blobs from `raw.githubusercontent.com/{owner}/{repo}/{sha}/{path}`
+5. Download accepted blobs by their tree-recorded SHA through
+   `api.github.com/repos/{owner}/{repo}/git/blobs/{blob_sha}`
    with an exact-host HTTPS allowlist, streaming byte limits, bounded
    concurrency, and no redirects.
 6. Write only into a temporary contained staging directory, compute SHA-256
    hashes, and return a candidate manifest. No managed Skill path is touched.
 
-This uses a few GitHub API requests per directory path rather than one API call
-per file. Raw downloads do not consume the GitHub REST core quota in the same
-way as blob API requests. The app must still handle raw-server failures and
-unknown content lengths with streaming limits.
+This uses a few metadata requests plus one Blob API request per accepted file.
+Blob downloads consume the unauthenticated GitHub REST core quota, so the app
+must surface rate-limit reset metadata and must not silently retry another host.
+Base64 metadata responses and decoded bytes remain independently bounded.
 
 Official references:
 
@@ -147,7 +148,7 @@ Evidence:
 ## Decision
 
 For public GitHub candidates in v0.1, implement a small Rust GitHub snapshot
-adapter using GitHub commit/tree metadata and fixed-SHA raw downloads. Do not
+adapter using GitHub commit/tree metadata and fixed blob-SHA downloads. Do not
 shell out to Git, add libgit2/gitoxide, invoke `npx skills`, or download a whole
 repository archive by default.
 
@@ -158,10 +159,11 @@ scope until a separate compatibility and credential decision.
 
 ## Safety Contract For Task 3.2
 
-- `github.com` API and `raw.githubusercontent.com` are the only network hosts;
+- `api.github.com` is the only acquisition network host;
   HTTPS is required and redirects are disabled.
 - A repository/ref/path is resolved to one commit SHA before any candidate file
-  is accepted. All raw downloads use that SHA, never a moving branch name.
+  is accepted. All blob downloads use tree-recorded blob SHAs from that commit,
+  never a moving branch name.
 - Suggested starting limits are 256 files, 25 MiB total staged bytes, 2 MiB per
   file, depth 8, and a bounded four-file download concurrency. The implementation
   must reject unknown/over-limit tree responses before content download.

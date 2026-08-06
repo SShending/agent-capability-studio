@@ -6,7 +6,7 @@
   "description": "A Codex-first visual workspace for authoring, auditing, comparing, and migrating Agent Skills.",
   "scripts": {
     "dev": "tauri dev",
-    "test": "node --test test/*.test.mjs && npm run web:build && cargo test --manifest-path src-tauri/Cargo.toml",
+    "test": "node --test test/*.test.mjs && npm run web:build && cargo test --manifest-path src-tauri/Cargo.toml --workspace",
     "web:dev": "vite",
     "web:build": "vite build",
     "desktop:dev": "tauri dev",

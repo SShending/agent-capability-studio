@@ -66,8 +66,14 @@
             <p id="result-summary">正在读取...</p>
           </div>
           <div class="topbar-actions">
+            <button class="secondary-button" id="export-skills-button" type="button">
+              <i data-lucide="package-open"></i><span>导出</span>
+            </button>
+            <button class="secondary-button" id="import-skill-bundle-button" type="button">
+              <i data-lucide="package-plus"></i><span>导入 Bundle</span>
+            </button>
             <button class="secondary-button candidate-entry-button" id="review-candidate-button" type="button">
-              <i data-lucide="file-search-2"></i><span>审查候选</span>
+              <i data-lucide="file-input"></i><span>导入 Skill</span>
             </button>
             <button class="icon-button" id="settings-button" type="button" aria-label="设置" title="设置">
               <i data-lucide="settings-2"></i>
@@ -286,14 +292,14 @@
       <form class="modal-shell" id="candidate-intake-form">
         <div class="modal-header">
           <div>
-            <span class="modal-kicker">候选 Skill</span>
-            <h2>审查安装前内容</h2>
+            <span class="modal-kicker">导入单个 Skill</span>
+            <h2>选择来源</h2>
           </div>
           <button class="icon-button compact" id="close-candidate-intake" type="button" aria-label="关闭" title="关闭">
             <i data-lucide="x"></i>
           </button>
         </div>
-        <div class="segmented-control candidate-source-control" role="tablist" aria-label="候选来源">
+        <div class="segmented-control candidate-source-control" role="tablist" aria-label="Skill 来源">
           <button class="is-active" id="candidate-github-mode" type="button" role="tab" aria-selected="true">
             <i data-lucide="github"></i><span>GitHub</span>
           </button>
@@ -332,13 +338,19 @@
               <i data-lucide="x"></i>
             </button>
             <div>
-              <span class="workspace-kicker">候选审查</span>
-              <h2 id="candidate-review-title">候选 Skill</h2>
+              <span class="workspace-kicker">导入前审查</span>
+              <h2 id="candidate-review-title">待导入 Skill</h2>
             </div>
             <span class="draft-status" id="candidate-review-state">临时暂存</span>
           </div>
           <div class="workspace-actions candidate-review-actions">
             <span class="candidate-no-install"><i data-lucide="shield-check"></i>尚未安装</span>
+            <button class="secondary-button" id="candidate-deep-audit-button" type="button">
+              <i data-lucide="cloud-upload"></i><span>深度审查</span>
+            </button>
+            <button class="primary-button" id="install-candidate-button" type="button">
+              <i data-lucide="package-check"></i><span>安装 Skill</span>
+            </button>
           </div>
         </header>
 
@@ -379,6 +391,19 @@
               <p id="candidate-audit-summary">正在读取暂存的 SKILL.md。</p>
             </section>
 
+            <section class="deep-result-section" id="candidate-deep-result-section" hidden>
+              <div class="review-heading">
+                <div>
+                  <span>云端深度审查</span>
+                  <h3 id="candidate-deep-result-verdict">等待审查</h3>
+                </div>
+                <span class="verdict-badge" id="candidate-deep-result-badge">未运行</span>
+              </div>
+              <p id="candidate-deep-result-summary"></p>
+              <div class="deep-result-meta" id="candidate-deep-result-meta"></div>
+              <div class="finding-list" id="candidate-deep-finding-list"></div>
+            </section>
+
             <section class="finding-section">
               <div class="review-section-title"><span>发现与证据</span><strong id="candidate-finding-count">0</strong></div>
               <div class="finding-list" id="candidate-finding-list"></div>
@@ -391,6 +416,114 @@
             </section>
           </aside>
         </div>
+      </div>
+    </dialog>
+
+    <dialog class="modal bundle-export-dialog" id="bundle-export-dialog">
+      <form class="modal-shell" id="bundle-export-form">
+        <div class="modal-header">
+          <div>
+            <span class="modal-kicker">Skill Bundle</span>
+            <h2>导出个人 Skills</h2>
+          </div>
+          <button class="icon-button compact" id="close-bundle-export" type="button" aria-label="关闭" title="关闭">
+            <i data-lucide="x"></i>
+          </button>
+        </div>
+
+        <div class="bundle-export-toolbar">
+          <label class="bundle-select-all">
+            <input id="bundle-select-all" type="checkbox" />
+            <span>选择全部</span>
+          </label>
+          <span id="bundle-selection-count">0 项</span>
+        </div>
+        <div class="bundle-skill-list" id="bundle-skill-list"></div>
+
+        <section class="bundle-export-review" id="bundle-export-review" hidden>
+          <dl class="bundle-export-summary">
+            <div><dt>Skills</dt><dd id="bundle-export-skill-count">0</dd></div>
+            <div><dt>文件</dt><dd id="bundle-export-file-count">0</dd></div>
+            <div><dt>内容大小</dt><dd id="bundle-export-byte-count">0 B</dd></div>
+          </dl>
+          <div class="bundle-export-blocks" id="bundle-export-blocks" hidden></div>
+          <p class="bundle-export-warning">
+            <i data-lucide="lock-open"></i>
+            <span>Bundle 不加密。确定性检查不能证明其中不存在其他秘密。</span>
+          </p>
+          <div class="bundle-export-receipt" id="bundle-export-receipt" hidden>
+            <div><span>保存位置</span><code id="bundle-receipt-destination"></code></div>
+            <div><span>Bundle revision</span><code id="bundle-receipt-revision"></code></div>
+            <dl>
+              <div><dt>Skills</dt><dd id="bundle-receipt-skill-count">0</dd></div>
+              <div><dt>文件</dt><dd id="bundle-receipt-file-count">0</dd></div>
+              <div><dt>归档大小</dt><dd id="bundle-receipt-byte-count">0 B</dd></div>
+            </dl>
+            <section class="server-install-handoff" aria-labelledby="server-install-heading">
+              <div>
+                <strong id="server-install-heading">传到 Linux 服务器后</strong>
+                <span>在服务器的 Codex 中粘贴这段指令。</span>
+              </div>
+              <pre id="server-install-prompt"></pre>
+              <button class="secondary-button" id="copy-server-install-prompt" type="button">
+                <i data-lucide="copy"></i><span>复制服务器安装指令</span>
+              </button>
+            </section>
+          </div>
+        </section>
+
+        <div class="modal-footer bundle-export-footer">
+          <button class="secondary-button" id="cancel-bundle-export" type="button">取消</button>
+          <button class="secondary-button" id="preview-bundle-export" type="submit">
+            <i data-lucide="list-checks"></i><span>检查导出内容</span>
+          </button>
+          <button class="primary-button" id="apply-bundle-export" type="button" disabled>
+            <i data-lucide="download"></i><span>选择位置并导出</span>
+          </button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="workspace-dialog bundle-import-dialog" id="bundle-import-dialog">
+      <div class="workspace-shell">
+        <header class="workspace-header">
+          <div class="workspace-title">
+            <button class="icon-button" id="close-bundle-import" type="button" aria-label="关闭导入审查" title="关闭">
+              <i data-lucide="x"></i>
+            </button>
+            <div>
+              <span class="workspace-kicker">Bundle Import</span>
+              <h2 id="bundle-import-title">已验证，尚未安装</h2>
+            </div>
+            <span class="draft-status" id="bundle-import-phase">暂存</span>
+          </div>
+          <div class="workspace-actions">
+            <span class="candidate-no-install" id="bundle-import-mutation-state"><i data-lucide="shield-check"></i>未安装</span>
+          </div>
+        </header>
+        <div class="bundle-import-body">
+          <section class="bundle-import-evidence">
+            <dl class="bundle-import-source" id="bundle-import-source"></dl>
+            <div class="bundle-install-results" id="bundle-install-results" role="status" aria-live="polite" hidden></div>
+            <div class="review-section-title"><span>包内 Skill</span><strong id="bundle-import-skill-count">0</strong></div>
+            <div class="bundle-import-skill-list" id="bundle-import-skill-list"></div>
+          </section>
+          <aside class="bundle-import-preview">
+            <div class="review-section-title"><span id="bundle-import-preview-title">文件预览</span></div>
+            <p class="candidate-preview-empty" id="bundle-import-preview-empty">选择一个文件以查看已验证暂存内容。</p>
+            <pre class="candidate-file-preview" id="bundle-import-file-preview" hidden></pre>
+            <pre class="candidate-file-preview bundle-import-current-preview" id="bundle-import-current-file-preview" hidden></pre>
+          </aside>
+        </div>
+        <footer class="workspace-footer">
+          <span id="bundle-import-status" role="status" aria-live="polite">内容已验证并暂存到应用缓存。</span>
+          <div class="bundle-import-footer-actions">
+            <button class="secondary-button" id="discard-bundle-import" type="button">放弃暂存</button>
+            <button class="primary-button" id="install-bundle-skills" type="button" disabled hidden>
+              <i data-lucide="download"></i><span>复核安装</span>
+            </button>
+          </div>
+        </footer>
       </div>
     </dialog>
 

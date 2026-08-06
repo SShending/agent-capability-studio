@@ -45,8 +45,10 @@ programming background.
 4. Inspect a GitHub or local Skill candidate before installation; optionally run
    a user-configured cloud semantic review after confirming the exact content
    and destination, while keeping audit and installation separate.
-5. Export user-controlled Skills as a manifest-and-hash bundle, then verify,
-   stage, compare, and explicitly install them on another machine.
+5. Export user-controlled Skills as a manifest-and-hash bundle. Desktop import
+   verifies, stages, and compares a Bundle; for the owner's trusted Mac export,
+   Codex on the Linux server may install it directly without repeating semantic
+   audit.
 6. Disable, re-enable, archive, restore, or permanently delete personal Skills
    through explicit, conflict-aware lifecycle actions.
 7. Understand compatibility and conflicts without modifying system or
@@ -66,8 +68,9 @@ programming background.
   provider in its result.
 - Concurrent edits are detected before overwrite; path traversal and unsafe
   archive entries are rejected.
-- Export and import move eligible Skills between the local Mac and a server while
-  preserving file hashes and surfacing conflicts.
+- Export moves eligible Skills from the local Mac to the owner's Linux server;
+  Codex can install that trusted self-export while skipping existing identical
+  content and asking before replacing a different same-name Skill.
 - System and plugin-managed Skills remain read-only and excluded from export.
 - Personal Skill lifecycle actions never overwrite another directory; permanent
   deletion is available only from archive after an explicit destructive
@@ -179,6 +182,10 @@ tools can remain discovery, distribution, scanning, or debugging backends.
   server or require Node.js on the user's machine.
 - Keep filesystem discovery, containment, hashing, atomic writes, bundle parsing,
   and adapter-specific placement in the Rust desktop core.
+- Keep the Skill Bundle format and verification core free of Tauri and WebView
+  dependencies so desktop export/import remains testable and portable. Do not
+  build a separate headless Bundle CLI unless a real migration proves that
+  Codex-assisted installation and existing transfer tools are insufficient.
 - Keep presentation, guided authoring, evidence explanation, and comparison in a
   web frontend hosted by the Tauri WebView.
 - Preserve the audit interface so deterministic built-in checks and optional
@@ -219,12 +226,21 @@ tools can remain discovery, distribution, scanning, or debugging backends.
   release.
 - Exclude credentials from Skill Bundles and do not add bundle encryption in
   v0.1.
-- Use `Agent Skill Studio` as the product name and `agent-skill-studio` as the
-  repository name during the Skill-first product stage.
+- Treat repeated Bundle Import and installation as idempotent: an exact Skill
+  revision already present in any managed source is shown and skipped rather
+  than copied or overwritten.
+- Treat a Bundle exported by the owner from this Mac as trusted self-migration
+  input on the owner's Linux server. Do not require a second semantic audit;
+  have Codex install it without silently replacing different existing content.
+- Use `Agent Skill Studio` as the product name during the Skill-first product
+  stage. The public repository is `agent-capability-studio`, leaving room for
+  later validated capability modules without prematurely renaming the product.
 - Treat Agent Skills as the first capability module; validate one second
   capability type after v0.1 before expanding or renaming the product.
 - Target macOS 13 or later provisionally; verify the final minimum against Tauri,
   WebKit, signing, and tested feature requirements before release.
+- Use Rust 1.85 or later for development so the portable core can retain current
+  maintained dependencies without forcing unrelated Tauri dependency downgrades.
 
 ## Open Decisions
 

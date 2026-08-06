@@ -1,3 +1,4 @@
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 use percent_encoding::percent_decode_str;
 use reqwest::{
     blocking::{Client, Response},
@@ -61,6 +62,29 @@ pub enum CandidateError {
     Io(#[from] std::io::Error),
 }
 
+#[derive(Debug, Error)]
+pub enum CandidateInstallError {
+    #[error(transparent)]
+    Candidate(#[from] CandidateError),
+    #[error(transparent)]
+    Workspace(#[from] super::WorkspaceError),
+    #[error("This candidate cannot be installed until blocking findings or compatibility problems are resolved.")]
+    Blocked,
+    #[error("The installation preview changed. Review the destination again.")]
+    PreviewMismatch,
+}
+
+impl CandidateInstallError {
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::Candidate(error) => error.code(),
+            Self::Workspace(error) => error.code(),
+            Self::Blocked => "CANDIDATE_INSTALL_BLOCKED",
+            Self::PreviewMismatch => "STALE_INSTALL_PREVIEW",
+        }
+    }
+}
+
 impl CandidateError {
     pub fn code(&self) -> &'static str {
         match self {
@@ -95,7 +119,11 @@ pub struct CandidateManifest {
 }
 
 #[derive(Clone, Debug, Serialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum CandidateSource {
     Local {
         selected_path: String,
@@ -159,6 +187,31 @@ pub struct CandidateFileContent {
     pub is_text: bool,
 }
 
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CandidateInstallPreview {
+    pub name: String,
+    pub destination: String,
+    pub file_count: usize,
+    pub candidate_hash: String,
+    pub install_revision: String,
+    pub compatibility_status: String,
+    pub audit_verdict: String,
+    pub conflict: Option<super::NameConflict>,
+    pub can_install: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CandidateInstallResult {
+    pub skill: Option<super::SkillDetail>,
+    pub destination: String,
+    pub installed_files: usize,
+    pub candidate_hash: String,
+    pub catalog_refresh_needed: bool,
+    pub restart_recommended: bool,
+}
+
 #[derive(Clone)]
 pub struct CandidateStager {
     store: Arc<StagingStore>,
@@ -168,6 +221,28 @@ pub struct CandidateStager {
 struct StagingStore {
     root: PathBuf,
     sessions: Mutex<HashMap<String, CandidateManifest>>,
+}
+
+struct VerifiedCandidateSnapshot {
+    review: CandidateReview,
+    files: Vec<VerifiedCandidateFile>,
+}
+
+struct VerifiedCandidateFile {
+    manifest: CandidateFile,
+    bytes: Vec<u8>,
+}
+
+#[derive(Clone)]
+pub(crate) struct CandidateAuditSnapshot {
+    pub candidate_hash: String,
+    pub files: Vec<CandidateAuditSnapshotFile>,
+}
+
+#[derive(Clone)]
+pub(crate) struct CandidateAuditSnapshotFile {
+    pub manifest: CandidateFile,
+    pub bytes: Vec<u8>,
 }
 
 impl Drop for StagingStore {
@@ -273,6 +348,7 @@ impl CandidateStager {
                     &request.repository,
                     &commit.sha,
                     &source_path,
+                    &input.blob_sha,
                     input.declared_size,
                 )?;
                 if bytes.len() != input.declared_size {
@@ -309,24 +385,131 @@ impl CandidateStager {
     ) -> Result<CandidateReview, CandidateError> {
         let manifest = self.session_manifest(session_id, expected_candidate_hash)?;
         let directory = self.session_directory(session_id)?;
-        let mut skill_markdown = None;
-        for file in &manifest.files {
-            let bytes = read_verified_staged_file(&directory, file)?;
-            if file.path == "SKILL.md" {
-                skill_markdown = Some(bytes);
-            }
+        let skill = manifest
+            .files
+            .iter()
+            .find(|file| file.path == "SKILL.md")
+            .ok_or(CandidateError::MissingSkillDocument)?;
+        let skill_bytes = read_verified_staged_file(&directory, skill)?;
+        Ok(review_from_skill_bytes(manifest, skill_bytes))
+    }
+
+    pub fn preview_install(
+        &self,
+        workspace: &super::Workspace,
+        session_id: &str,
+        expected_candidate_hash: &str,
+    ) -> Result<CandidateInstallPreview, CandidateInstallError> {
+        let review = self.review(session_id, expected_candidate_hash)?;
+        Ok(install_preview(workspace, &review)?)
+    }
+
+    pub fn install(
+        &self,
+        workspace: &super::Workspace,
+        session_id: &str,
+        expected_candidate_hash: &str,
+        expected_install_revision: &str,
+    ) -> Result<CandidateInstallResult, CandidateInstallError> {
+        let snapshot = self.verified_snapshot(session_id, expected_candidate_hash)?;
+        let advisory = install_preview(workspace, &snapshot.review)?;
+        if expected_install_revision.is_empty()
+            || expected_install_revision != advisory.install_revision
+        {
+            return Err(CandidateInstallError::PreviewMismatch);
         }
-        let skill_markdown = skill_markdown.ok_or(CandidateError::MissingSkillDocument)?;
-        let audit = match String::from_utf8(skill_markdown) {
-            Ok(markdown) => super::audit(&markdown, "", ""),
-            Err(error) => non_text_skill_audit(error.as_bytes()),
+        if snapshot.review.compatibility.status == "incompatible"
+            || snapshot.review.audit.verdict == "block"
+        {
+            return Err(CandidateInstallError::Blocked);
+        }
+
+        let personal_root = workspace.personal_root_for_creation()?;
+        let destination = personal_root.join(&advisory.name);
+        if !destination.starts_with(&personal_root)
+            || destination.display().to_string() != advisory.destination
+        {
+            return Err(super::WorkspaceError::UnsafePath.into());
+        }
+        let temporary = Builder::new()
+            .prefix(".candidate-install-")
+            .tempdir_in(&personal_root)
+            .map_err(super::WorkspaceError::Io)?;
+        for file in &snapshot.files {
+            write_install_file(temporary.path(), &file.manifest, &file.bytes)?;
+        }
+        sync_install_directories(temporary.path(), &snapshot.files)?;
+
+        let _mutation = workspace
+            .mutations
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let refreshed = workspace.scan_catalog_index()?;
+        *workspace
+            .index
+            .write()
+            .unwrap_or_else(|error| error.into_inner()) = Some(refreshed);
+        if let Some(conflict) = workspace.find_name_conflict(&advisory.name)? {
+            return Err(super::WorkspaceError::NameConflict {
+                name: advisory.name,
+                source_label: conflict.source,
+            }
+            .into());
+        }
+        let current_personal_root = workspace.personal_root_for_creation()?;
+        if current_personal_root != personal_root {
+            return Err(super::WorkspaceError::UnsafePath.into());
+        }
+        rename_directory_no_replace(temporary.path(), &destination).map_err(|error| {
+            if error.kind() == std::io::ErrorKind::AlreadyExists {
+                CandidateInstallError::Workspace(super::WorkspaceError::NameConflict {
+                    name: advisory.name.clone(),
+                    source_label: "personal".into(),
+                })
+            } else {
+                CandidateInstallError::Workspace(super::WorkspaceError::Io(error))
+            }
+        })?;
+        let _ = temporary.keep();
+        // The rename is the commit boundary. Parent syncing is best-effort because a
+        // post-commit durability error must not be reported as a failed installation.
+        let _ = sync_directory(&personal_root);
+
+        let installed =
+            match workspace.read_skill(&destination, super::Source::Personal, &personal_root) {
+                Ok(Some(skill)) => skill,
+                Ok(None) | Err(_) => {
+                    *workspace
+                        .index
+                        .write()
+                        .unwrap_or_else(|error| error.into_inner()) = None;
+                    return Ok(CandidateInstallResult {
+                        skill: None,
+                        destination: destination.display().to_string(),
+                        installed_files: snapshot.files.len(),
+                        candidate_hash: snapshot.review.manifest.candidate_hash,
+                        catalog_refresh_needed: true,
+                        restart_recommended: true,
+                    });
+                }
+            };
+        let installed_id = installed.summary.id.clone();
+        let skill = super::SkillDetail {
+            content_hash: super::hash(&installed.markdown),
+            summary: installed.summary.clone(),
+            markdown: installed.markdown.clone(),
+            document: installed.document.clone(),
+            editable: true,
         };
-        Ok(CandidateReview {
-            compatibility: compatibility_for(&manifest, &audit),
-            manifest,
-            audit,
-            // v0.1 rejects unsupported entries during acquisition rather than omitting them.
-            skipped_entries: Vec::new(),
+        workspace.upsert_index(installed)?;
+        debug_assert_eq!(skill.summary.id, installed_id);
+        Ok(CandidateInstallResult {
+            skill: Some(skill),
+            destination: destination.display().to_string(),
+            installed_files: snapshot.files.len(),
+            candidate_hash: snapshot.review.manifest.candidate_hash,
+            catalog_refresh_needed: false,
+            restart_recommended: true,
         })
     }
 
@@ -356,6 +539,25 @@ impl CandidateStager {
                 is_text: false,
             }),
         }
+    }
+
+    pub(crate) fn audit_snapshot(
+        &self,
+        session_id: &str,
+        expected_candidate_hash: &str,
+    ) -> Result<CandidateAuditSnapshot, CandidateError> {
+        let snapshot = self.verified_snapshot(session_id, expected_candidate_hash)?;
+        Ok(CandidateAuditSnapshot {
+            candidate_hash: snapshot.review.manifest.candidate_hash,
+            files: snapshot
+                .files
+                .into_iter()
+                .map(|file| CandidateAuditSnapshotFile {
+                    manifest: file.manifest,
+                    bytes: file.bytes,
+                })
+                .collect(),
+        })
     }
 
     pub fn discard(&self, session_id: &str) -> Result<(), CandidateError> {
@@ -412,6 +614,33 @@ impl CandidateStager {
             return Err(CandidateError::ChangedSession);
         }
         Ok(canonical)
+    }
+
+    fn verified_snapshot(
+        &self,
+        session_id: &str,
+        expected_candidate_hash: &str,
+    ) -> Result<VerifiedCandidateSnapshot, CandidateError> {
+        let manifest = self.session_manifest(session_id, expected_candidate_hash)?;
+        let directory = self.session_directory(session_id)?;
+        verify_staged_file_set(&directory, &manifest)?;
+        let mut files = Vec::with_capacity(manifest.files.len());
+        let mut skill_bytes = None;
+        for file in &manifest.files {
+            let bytes = read_verified_staged_file(&directory, file)?;
+            if file.path == "SKILL.md" {
+                skill_bytes = Some(bytes.clone());
+            }
+            files.push(VerifiedCandidateFile {
+                manifest: file.clone(),
+                bytes,
+            });
+        }
+        let review = review_from_skill_bytes(
+            manifest,
+            skill_bytes.ok_or(CandidateError::MissingSkillDocument)?,
+        );
+        Ok(VerifiedCandidateSnapshot { review, files })
     }
 
     fn resolve_target_tree(
@@ -524,6 +753,7 @@ struct LocalFileIdentity {
 #[derive(Clone)]
 struct GithubInput {
     relative: String,
+    blob_sha: String,
     declared_size: usize,
     executable: bool,
 }
@@ -615,7 +845,10 @@ fn github_inputs(entries: Vec<GithubTreeEntry>) -> Result<Vec<GithubInput>, Cand
         if entry.kind == "tree" && entry.mode == "040000" {
             continue;
         }
-        if entry.kind != "blob" || !matches!(entry.mode.as_str(), "100644" | "100755") {
+        if entry.kind != "blob"
+            || !matches!(entry.mode.as_str(), "100644" | "100755")
+            || !valid_sha(&entry.sha)
+        {
             return Err(CandidateError::UnsafeEntry(entry.path));
         }
         let relative = validated_relative_string(&entry.path)?;
@@ -627,6 +860,7 @@ fn github_inputs(entries: Vec<GithubTreeEntry>) -> Result<Vec<GithubInput>, Cand
         declared_total = checked_total(declared_total, declared_size)?;
         files.push(GithubInput {
             relative,
+            blob_sha: entry.sha,
             declared_size,
             executable: entry.mode == "100755",
         });
@@ -742,13 +976,277 @@ fn read_verified_staged_file(root: &Path, file: &CandidateFile) -> Result<Vec<u8
     {
         return Err(CandidateError::ChangedSession);
     }
-    let bytes = read_limited(File::open(path)?, MAX_FILE_BYTES, || {
-        CandidateError::ChangedSession
-    })?;
+    let mut options = OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NOFOLLOW);
+    }
+    let opened = options
+        .open(path)
+        .map_err(|_| CandidateError::ChangedSession)?;
+    let opened_metadata = opened
+        .metadata()
+        .map_err(|_| CandidateError::ChangedSession)?;
+    if !opened_metadata.is_file() || opened_metadata.len() != file.size as u64 {
+        return Err(CandidateError::ChangedSession);
+    }
+    let bytes = read_limited(opened, MAX_FILE_BYTES, || CandidateError::ChangedSession)?;
     if bytes.len() != file.size || sha256(&bytes) != file.sha256 {
         return Err(CandidateError::ChangedSession);
     }
     Ok(bytes)
+}
+
+fn review_from_skill_bytes(manifest: CandidateManifest, skill_bytes: Vec<u8>) -> CandidateReview {
+    let audit = match String::from_utf8(skill_bytes) {
+        Ok(markdown) => super::audit(&markdown, "", ""),
+        Err(error) => non_text_skill_audit(error.as_bytes()),
+    };
+    CandidateReview {
+        compatibility: compatibility_for(&manifest, &audit),
+        manifest,
+        audit,
+        // v0.1 rejects unsupported entries during acquisition rather than omitting them.
+        skipped_entries: Vec::new(),
+    }
+}
+
+fn install_preview(
+    workspace: &super::Workspace,
+    review: &CandidateReview,
+) -> Result<CandidateInstallPreview, super::WorkspaceError> {
+    let name = review.audit.document.name.clone();
+    let destination = canonical_intended_path(&workspace.roots().personal)?.join(&name);
+    let conflict = if super::valid_name(&name) {
+        workspace.find_name_conflict(&name)?
+    } else {
+        None
+    };
+    let can_install = review.compatibility.status != "incompatible"
+        && review.audit.verdict != "block"
+        && conflict.is_none();
+    Ok(CandidateInstallPreview {
+        install_revision: candidate_install_revision(
+            &review.manifest,
+            &name,
+            &destination,
+            &review.audit.content_hash,
+        ),
+        name,
+        destination: destination.display().to_string(),
+        file_count: review.manifest.files.len(),
+        candidate_hash: review.manifest.candidate_hash.clone(),
+        compatibility_status: review.compatibility.status.clone(),
+        audit_verdict: review.audit.verdict.clone(),
+        conflict,
+        can_install,
+    })
+}
+
+fn canonical_intended_path(path: &Path) -> Result<PathBuf, super::WorkspaceError> {
+    let mut cursor = path;
+    let mut missing = Vec::new();
+    while fs::symlink_metadata(cursor).is_err() {
+        let name = cursor
+            .file_name()
+            .ok_or(super::WorkspaceError::UnsafePath)?;
+        missing.push(name.to_os_string());
+        cursor = cursor.parent().ok_or(super::WorkspaceError::UnsafePath)?;
+    }
+    let mut canonical = fs::canonicalize(cursor)?;
+    for name in missing.into_iter().rev() {
+        canonical.push(name);
+    }
+    Ok(canonical)
+}
+
+fn candidate_install_revision(
+    manifest: &CandidateManifest,
+    name: &str,
+    destination: &Path,
+    audit_hash: &str,
+) -> String {
+    let source = match &manifest.source {
+        CandidateSource::Local { selected_path } => format!("local\0{selected_path}"),
+        CandidateSource::Github {
+            repository,
+            requested_ref,
+            resolved_sha,
+            skill_path,
+        } => format!("github\0{repository}\0{requested_ref}\0{resolved_sha}\0{skill_path}"),
+    };
+    sha256(
+        format!(
+            "{}\0{}\0{}\0{}\0{}",
+            manifest.candidate_hash,
+            source,
+            name,
+            destination.display(),
+            audit_hash
+        )
+        .as_bytes(),
+    )
+}
+
+fn verify_staged_file_set(root: &Path, manifest: &CandidateManifest) -> Result<(), CandidateError> {
+    let mut actual = Vec::new();
+    collect_staged_file_paths(root, root, 0, &mut actual)?;
+    actual.sort();
+    let mut expected = manifest
+        .files
+        .iter()
+        .map(|file| file.path.clone())
+        .collect::<Vec<_>>();
+    expected.sort();
+    if actual != expected {
+        return Err(CandidateError::ChangedSession);
+    }
+    Ok(())
+}
+
+fn collect_staged_file_paths(
+    root: &Path,
+    current: &Path,
+    depth: usize,
+    paths: &mut Vec<String>,
+) -> Result<(), CandidateError> {
+    if depth > MAX_DEPTH {
+        return Err(CandidateError::ChangedSession);
+    }
+    let mut entries = fs::read_dir(current)
+        .map_err(|_| CandidateError::ChangedSession)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| CandidateError::ChangedSession)?;
+    entries.sort_by_key(|entry| entry.file_name());
+    for entry in entries {
+        let path = entry.path();
+        let metadata = fs::symlink_metadata(&path).map_err(|_| CandidateError::ChangedSession)?;
+        if metadata.file_type().is_symlink() {
+            return Err(CandidateError::ChangedSession);
+        }
+        if metadata.is_dir() {
+            collect_staged_file_paths(root, &path, depth + 1, paths)?;
+        } else if metadata.is_file() {
+            paths.push(relative_string(root, &path).map_err(|_| CandidateError::ChangedSession)?);
+        } else {
+            return Err(CandidateError::ChangedSession);
+        }
+    }
+    Ok(())
+}
+
+fn write_install_file(
+    root: &Path,
+    manifest: &CandidateFile,
+    bytes: &[u8],
+) -> Result<(), super::WorkspaceError> {
+    let relative =
+        validated_relative_string(&manifest.path).map_err(|_| super::WorkspaceError::UnsafePath)?;
+    let destination = root.join(&relative);
+    if !destination.starts_with(root) {
+        return Err(super::WorkspaceError::UnsafePath);
+    }
+    let parent = destination
+        .parent()
+        .ok_or(super::WorkspaceError::UnsafePath)?;
+    fs::create_dir_all(parent)?;
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&destination)?;
+    file.write_all(bytes)?;
+    file.flush()?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = if manifest.executable { 0o755 } else { 0o644 };
+        file.set_permissions(fs::Permissions::from_mode(mode))?;
+    }
+    file.sync_all()?;
+    Ok(())
+}
+
+pub(super) fn sync_directory(path: &Path) -> Result<(), super::WorkspaceError> {
+    File::open(path)?.sync_all()?;
+    Ok(())
+}
+
+fn sync_install_directories(
+    root: &Path,
+    files: &[VerifiedCandidateFile],
+) -> Result<(), super::WorkspaceError> {
+    let mut directories = files
+        .iter()
+        .filter_map(|file| Path::new(&file.manifest.path).parent())
+        .map(|parent| root.join(parent))
+        .collect::<Vec<_>>();
+    directories.sort_by_key(|path| std::cmp::Reverse(path.components().count()));
+    directories.dedup();
+    for directory in directories {
+        sync_directory(&directory)?;
+    }
+    sync_directory(root)
+}
+
+#[cfg(target_os = "macos")]
+pub(super) fn rename_directory_no_replace(
+    source: &Path,
+    destination: &Path,
+) -> std::io::Result<()> {
+    use std::{ffi::CString, os::unix::ffi::OsStrExt};
+
+    let source = CString::new(source.as_os_str().as_bytes())
+        .map_err(|_| std::io::Error::from(std::io::ErrorKind::InvalidInput))?;
+    let destination = CString::new(destination.as_os_str().as_bytes())
+        .map_err(|_| std::io::Error::from(std::io::ErrorKind::InvalidInput))?;
+    // RENAME_EXCL makes the same-filesystem directory commit atomic and non-overwriting.
+    let result =
+        unsafe { libc::renamex_np(source.as_ptr(), destination.as_ptr(), libc::RENAME_EXCL) };
+    if result == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
+}
+
+#[cfg(target_os = "linux")]
+pub(super) fn rename_directory_no_replace(
+    source: &Path,
+    destination: &Path,
+) -> std::io::Result<()> {
+    use std::{ffi::CString, os::unix::ffi::OsStrExt};
+
+    let source = CString::new(source.as_os_str().as_bytes())
+        .map_err(|_| std::io::Error::from(std::io::ErrorKind::InvalidInput))?;
+    let destination = CString::new(destination.as_os_str().as_bytes())
+        .map_err(|_| std::io::Error::from(std::io::ErrorKind::InvalidInput))?;
+    let result = unsafe {
+        libc::renameat2(
+            libc::AT_FDCWD,
+            source.as_ptr(),
+            libc::AT_FDCWD,
+            destination.as_ptr(),
+            libc::RENAME_NOREPLACE,
+        )
+    };
+    if result == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+pub(super) fn rename_directory_no_replace(
+    _source: &Path,
+    _destination: &Path,
+) -> std::io::Result<()> {
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "atomic no-replace installation is not supported on this platform",
+    ))
 }
 
 fn non_text_skill_audit(bytes: &[u8]) -> super::AuditResult {
@@ -799,9 +1297,12 @@ fn compatibility_for(
     let executable_count = manifest.files.iter().filter(|file| file.executable).count();
     let mut checks = vec![CandidateCompatibilityCheck {
         id: "staged-integrity".into(),
-        label: "暂存文件完整性".into(),
+        label: "暂存文件清单".into(),
         status: "pass".into(),
-        detail: format!("{} 个文件与当前 SHA-256 清单一致。", manifest.files.len()),
+        detail: format!(
+            "已记录 {} 个文件的大小、权限和 SHA-256；安装前会重新核对全部文件。",
+            manifest.files.len()
+        ),
     }];
     checks.push(CandidateCompatibilityCheck {
         id: "skill-document-text".into(),
@@ -1085,6 +1586,7 @@ trait GithubTransport: Send + Sync {
         repository: &str,
         commit_sha: &str,
         path: &str,
+        blob_sha: &str,
         expected_size: usize,
     ) -> Result<Vec<u8>, CandidateError>;
 }
@@ -1214,29 +1716,55 @@ impl GithubTransport for HttpGithubTransport {
         &self,
         owner: &str,
         repository: &str,
-        commit_sha: &str,
+        _commit_sha: &str,
         path: &str,
+        blob_sha: &str,
         expected_size: usize,
     ) -> Result<Vec<u8>, CandidateError> {
-        let mut parts = vec![owner, repository, commit_sha];
-        parts.extend(source_components(path));
-        let url = github_url("https://raw.githubusercontent.com", &parts)?;
-        let response = self
-            .client
-            .get(url)
-            .send()
-            .map_err(|error| github_request_error(&error))?;
-        let response = checked_github_response(response)?;
-        if response
-            .content_length()
-            .is_some_and(|length| length != expected_size as u64)
-        {
-            return Err(CandidateError::InconsistentGithubSource);
-        }
-        read_response_limited(response, MAX_FILE_BYTES, || {
-            CandidateError::FileTooLarge(path.into())
-        })
+        let url = github_url(
+            "https://api.github.com",
+            &["repos", owner, repository, "git", "blobs", blob_sha],
+        )?;
+        let response: GithubBlobResponse = self.api_json(url)?;
+        decode_github_blob(response, blob_sha, expected_size, path)
     }
+}
+
+#[derive(Deserialize)]
+struct GithubBlobResponse {
+    sha: String,
+    size: usize,
+    encoding: String,
+    content: String,
+}
+
+fn decode_github_blob(
+    response: GithubBlobResponse,
+    expected_sha: &str,
+    expected_size: usize,
+    path: &str,
+) -> Result<Vec<u8>, CandidateError> {
+    if response.sha != expected_sha
+        || response.size != expected_size
+        || response.encoding != "base64"
+    {
+        return Err(CandidateError::InconsistentGithubSource);
+    }
+    let encoded = response
+        .content
+        .bytes()
+        .filter(|byte| !byte.is_ascii_whitespace())
+        .collect::<Vec<_>>();
+    let bytes = STANDARD
+        .decode(encoded)
+        .map_err(|_| CandidateError::InconsistentGithubSource)?;
+    if bytes.len() != expected_size {
+        return Err(CandidateError::InconsistentGithubSource);
+    }
+    if bytes.len() > MAX_FILE_BYTES {
+        return Err(CandidateError::FileTooLarge(path.into()));
+    }
+    Ok(bytes)
 }
 
 fn github_url(base: &str, parts: &[&str]) -> Result<Url, CandidateError> {
@@ -1359,6 +1887,7 @@ mod tests {
             _repository: &str,
             commit_sha: &str,
             path: &str,
+            _blob_sha: &str,
             _expected_size: usize,
         ) -> Result<Vec<u8>, CandidateError> {
             self.downloads
@@ -1378,6 +1907,36 @@ mod tests {
         CandidateStager::with_github(directory.path().join("staging"), github).unwrap()
     }
 
+    fn installable_candidate(
+        directory: &TempDir,
+        name: &str,
+        executable: bool,
+    ) -> (CandidateStager, super::super::Workspace, CandidateManifest) {
+        let source = directory.path().join(format!("source-{name}"));
+        fs::create_dir_all(source.join("scripts")).unwrap();
+        fs::write(
+            source.join("SKILL.md"),
+            format!(
+                "---\nname: {name}\ndescription: Use when the user asks to inspect a staged candidate.\n---\n\n# Candidate\n\nReview the supplied evidence and report exact findings before taking any requested action.\n"
+            ),
+        )
+        .unwrap();
+        fs::write(source.join("scripts/helper.sh"), "echo staged\n").unwrap();
+        #[cfg(unix)]
+        if executable {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(
+                source.join("scripts/helper.sh"),
+                fs::Permissions::from_mode(0o755),
+            )
+            .unwrap();
+        }
+        let stager = stager(directory, Arc::new(FakeGithub::default()));
+        let manifest = stager.stage_local(&source).unwrap();
+        let workspace = super::super::Workspace::new(directory.path().join("codex"));
+        (stager, workspace, manifest)
+    }
+
     fn tree_entry(
         path: &str,
         mode: &str,
@@ -1389,7 +1948,11 @@ mod tests {
             path: path.into(),
             mode: mode.into(),
             kind: kind.into(),
-            sha: sha.into(),
+            sha: if kind == "blob" && !valid_sha(sha) {
+                sha256(sha.as_bytes())[..40].into()
+            } else {
+                sha.into()
+            },
             size,
         }
     }
@@ -1502,6 +2065,182 @@ mod tests {
         assert!(matches!(
             stager.review(&manifest.session_id, &manifest.candidate_hash),
             Err(CandidateError::ChangedSession)
+        ));
+    }
+
+    #[test]
+    fn install_preview_does_not_write_and_install_preserves_files_and_modes() {
+        let directory = TempDir::new().unwrap();
+        let (stager, workspace, manifest) = installable_candidate(&directory, "demo-install", true);
+        let personal_root = directory.path().join("codex/skills");
+        let staged_root = stager.store.root.join(&manifest.session_id);
+        let staged_before = fs::read(staged_root.join("SKILL.md")).unwrap();
+
+        let preview = stager
+            .preview_install(&workspace, &manifest.session_id, &manifest.candidate_hash)
+            .unwrap();
+        assert!(preview.can_install);
+        assert!(!personal_root.exists());
+
+        let result = stager
+            .install(
+                &workspace,
+                &manifest.session_id,
+                &manifest.candidate_hash,
+                &preview.install_revision,
+            )
+            .unwrap();
+        let installed_root = personal_root.join("demo-install");
+        assert_eq!(result.installed_files, 2);
+        assert_eq!(
+            fs::read(installed_root.join("SKILL.md")).unwrap(),
+            staged_before
+        );
+        assert_eq!(
+            fs::read_to_string(installed_root.join("scripts/helper.sh")).unwrap(),
+            "echo staged\n"
+        );
+        assert_eq!(
+            fs::read(staged_root.join("SKILL.md")).unwrap(),
+            staged_before
+        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_ne!(
+                fs::metadata(installed_root.join("scripts/helper.sh"))
+                    .unwrap()
+                    .permissions()
+                    .mode()
+                    & 0o111,
+                0
+            );
+        }
+        assert!(fs::read_dir(&personal_root)
+            .unwrap()
+            .filter_map(Result::ok)
+            .all(|entry| !entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".candidate-install-")));
+    }
+
+    #[test]
+    fn install_rejects_stale_revisions_and_staged_changes() {
+        let directory = TempDir::new().unwrap();
+        let (stager, workspace, manifest) = installable_candidate(&directory, "demo-stale", false);
+        let preview = stager
+            .preview_install(&workspace, &manifest.session_id, &manifest.candidate_hash)
+            .unwrap();
+        assert!(matches!(
+            stager.install(
+                &workspace,
+                &manifest.session_id,
+                &manifest.candidate_hash,
+                "wrong-revision"
+            ),
+            Err(CandidateInstallError::PreviewMismatch)
+        ));
+        assert!(!directory.path().join("codex/skills/demo-stale").exists());
+
+        fs::write(
+            stager
+                .store
+                .root
+                .join(&manifest.session_id)
+                .join("extra.txt"),
+            "not in the manifest",
+        )
+        .unwrap();
+        assert!(matches!(
+            stager.install(
+                &workspace,
+                &manifest.session_id,
+                &manifest.candidate_hash,
+                &preview.install_revision
+            ),
+            Err(CandidateInstallError::Candidate(
+                CandidateError::ChangedSession
+            ))
+        ));
+        assert!(!directory.path().join("codex/skills/demo-stale").exists());
+    }
+
+    #[test]
+    fn install_rechecks_conflicts_after_preview_and_never_overwrites() {
+        let directory = TempDir::new().unwrap();
+        let (stager, workspace, manifest) =
+            installable_candidate(&directory, "demo-conflict", false);
+        let preview = stager
+            .preview_install(&workspace, &manifest.session_id, &manifest.candidate_hash)
+            .unwrap();
+        let conflict = directory.path().join("codex/skills/demo-conflict");
+        fs::create_dir_all(&conflict).unwrap();
+        fs::write(conflict.join("keep.txt"), "existing content").unwrap();
+
+        assert!(matches!(
+            stager.install(
+                &workspace,
+                &manifest.session_id,
+                &manifest.candidate_hash,
+                &preview.install_revision
+            ),
+            Err(CandidateInstallError::Workspace(
+                super::super::WorkspaceError::NameConflict { .. }
+            ))
+        ));
+        assert_eq!(
+            fs::read_to_string(conflict.join("keep.txt")).unwrap(),
+            "existing content"
+        );
+        assert!(!conflict.join("SKILL.md").exists());
+    }
+
+    #[test]
+    fn install_rejects_blocked_documents_and_second_installations() {
+        let directory = TempDir::new().unwrap();
+        let blocked_source = directory.path().join("blocked-source");
+        fs::create_dir_all(&blocked_source).unwrap();
+        fs::write(blocked_source.join("SKILL.md"), [0xff, 0xfe]).unwrap();
+        let stager = stager(&directory, Arc::new(FakeGithub::default()));
+        let blocked = stager.stage_local(&blocked_source).unwrap();
+        let workspace = super::super::Workspace::new(directory.path().join("codex"));
+        let blocked_preview = stager
+            .preview_install(&workspace, &blocked.session_id, &blocked.candidate_hash)
+            .unwrap();
+        assert!(!blocked_preview.can_install);
+        assert!(matches!(
+            stager.install(
+                &workspace,
+                &blocked.session_id,
+                &blocked.candidate_hash,
+                &blocked_preview.install_revision
+            ),
+            Err(CandidateInstallError::Blocked)
+        ));
+
+        let (stager, workspace, manifest) = installable_candidate(&directory, "demo-once", false);
+        let preview = stager
+            .preview_install(&workspace, &manifest.session_id, &manifest.candidate_hash)
+            .unwrap();
+        stager
+            .install(
+                &workspace,
+                &manifest.session_id,
+                &manifest.candidate_hash,
+                &preview.install_revision,
+            )
+            .unwrap();
+        assert!(matches!(
+            stager.install(
+                &workspace,
+                &manifest.session_id,
+                &manifest.candidate_hash,
+                &preview.install_revision
+            ),
+            Err(CandidateInstallError::Workspace(
+                super::super::WorkspaceError::NameConflict { .. }
+            ))
         ));
     }
 
@@ -1621,6 +2360,28 @@ mod tests {
             4,
         );
         assert_ne!(regular.candidate_hash, executable.candidate_hash);
+    }
+
+    #[test]
+    fn candidate_source_uses_the_desktop_bridge_field_names() {
+        let github = serde_json::to_value(CandidateSource::Github {
+            repository: "owner/repo".into(),
+            requested_ref: "main".into(),
+            resolved_sha: "a".repeat(40),
+            skill_path: "skills/demo".into(),
+        })
+        .unwrap();
+        assert_eq!(github["kind"], "github");
+        assert_eq!(github["requestedRef"], "main");
+        assert_eq!(github["resolvedSha"], "a".repeat(40));
+        assert_eq!(github["skillPath"], "skills/demo");
+        assert!(github.get("resolved_sha").is_none());
+
+        let local = serde_json::to_value(CandidateSource::Local {
+            selected_path: "/tmp/demo".into(),
+        })
+        .unwrap();
+        assert_eq!(local["selectedPath"], "/tmp/demo");
     }
 
     #[test]
@@ -1868,6 +2629,56 @@ mod tests {
             assert!(matches!(
                 parse_github_url(url),
                 Err(CandidateError::InvalidGithubUrl)
+            ));
+        }
+    }
+
+    #[test]
+    fn github_blob_api_content_is_hash_and_size_bound() {
+        let sha = "a".repeat(40);
+        let decoded = decode_github_blob(
+            GithubBlobResponse {
+                sha: sha.clone(),
+                size: 5,
+                encoding: "base64".into(),
+                content: "aGVs\nbG8=\n".into(),
+            },
+            &sha,
+            5,
+            "SKILL.md",
+        )
+        .unwrap();
+        assert_eq!(decoded, b"hello");
+
+        for response in [
+            GithubBlobResponse {
+                sha: "b".repeat(40),
+                size: 5,
+                encoding: "base64".into(),
+                content: "aGVsbG8=".into(),
+            },
+            GithubBlobResponse {
+                sha: sha.clone(),
+                size: 4,
+                encoding: "base64".into(),
+                content: "aGVsbG8=".into(),
+            },
+            GithubBlobResponse {
+                sha: sha.clone(),
+                size: 5,
+                encoding: "utf-8".into(),
+                content: "hello".into(),
+            },
+            GithubBlobResponse {
+                sha: sha.clone(),
+                size: 5,
+                encoding: "base64".into(),
+                content: "not base64".into(),
+            },
+        ] {
+            assert!(matches!(
+                decode_github_blob(response, &sha, 5, "SKILL.md"),
+                Err(CandidateError::InconsistentGithubSource)
             ));
         }
     }

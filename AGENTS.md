@@ -35,6 +35,10 @@ and open-source implementations before recommending or implementing it.
 - Deliver a Tauri 2 desktop application, macOS first.
 - Keep filesystem discovery, path containment, hashing, atomic writes, bundle
   parsing, and Agent-specific placement in the Rust desktop core.
+- Keep the Skill Bundle format and verification core in a pure Rust crate with
+  no Tauri, WebView, Node.js, or operating-system GUI dependency. This keeps the
+  desktop format logic testable; it does not require a separate CLI product or
+  authorize Windows or Linux desktop scope.
 - Keep guided authoring, presentation, evidence explanation, and comparison in
   the WebView frontend.
 - Expose a small typed desktop-command interface between frontend and Rust. The
@@ -53,6 +57,8 @@ and open-source implementations before recommending or implementing it.
 ## Technology
 
 - Use Rust and Tauri 2 for the desktop core and packaging.
+- Require Rust 1.85 or later for development and release builds; end users of
+  the packaged desktop application do not need a Rust toolchain.
 - Reuse the existing HTML/CSS/JavaScript interaction model during the first
   vertical slice. Do not add a frontend framework without demonstrated need.
 - Local development builds may be unsigned. Public v0.1 artifacts must be signed
@@ -94,6 +100,14 @@ and open-source implementations before recommending or implementing it.
   allowed only from archive after exact destructive confirmation; disable,
   enable, archive, restore, and delete must never overwrite a destination.
 - Bundle Import verifies and stages content; it does not install content.
+- Distinguish untrusted intake from trusted self-migration. A Bundle the owner
+  exported from this Mac may be installed by Codex on the owner's Linux server
+  without repeated semantic audit; it must still avoid silently replacing a
+  different existing Skill.
+- Make repeated Bundle Import and installation idempotent. Preserve the complete
+  same-name match set across managed sources; when an exact complete-directory
+  revision already exists, classify it as identical and skip mutation after a
+  final apply-time recheck. Never duplicate or overwrite it.
 - Exclude credentials and secrets from bundles. v0.1 bundles are not encrypted.
 - Reject path traversal, unsafe archive entries, containment escapes, and
   unsupported symlink writes.
@@ -115,7 +129,9 @@ and open-source implementations before recommending or implementing it.
 
 ## User Experience
 
-- Make the desktop GUI the primary interface; keep CLI surfaces secondary.
+- Make the desktop GUI the primary interface. For the owner's trusted Mac to
+  Linux migration, prefer a short Codex-assisted installation procedure and
+  existing transfer tools over a custom headless CLI.
 - Design for people who do not use a terminal or edit configuration files.
 - Use plain language for the common path while keeping exact source, paths,
   hashes, and evidence available one level deeper.
@@ -177,3 +193,6 @@ and open-source implementations before recommending or implementing it.
   for local editing and creation.
 - Do not claim universal cross-Agent compatibility without adapter evidence.
 - Do not expand v0.1 into a general Agent configuration manager.
+- Do not build a custom headless Bundle CLI unless a real trusted migration has
+  demonstrated that Codex-assisted installation and maintained alternatives are
+  insufficient.

@@ -1,14 +1,27 @@
 mod audit;
+mod bundle_export;
+mod bundle_install;
 mod candidate;
 mod deep_audit;
+// v0.1 defines and tests this seam before any maintained scanner is registered.
+mod bundle_import;
+#[allow(dead_code)]
+mod external_scanner;
 mod lifecycle;
 
+pub use bundle_export::{BundleExportError, BundleExportPlan, BundleExportReceipt};
+pub use bundle_import::{BundleImportError, BundleImportFileContent, BundleImportManager};
+pub use bundle_install::{
+    BundleFileComparison, BundleInstallError, BundleInstallResult, BundleInstallSelection,
+    BundleInstallationReview,
+};
 pub use candidate::{
-    CandidateError, CandidateFileContent, CandidateManifest, CandidateReview, CandidateStager,
+    CandidateError, CandidateFileContent, CandidateInstallError, CandidateInstallPreview,
+    CandidateInstallResult, CandidateManifest, CandidateReview, CandidateStager,
 };
 pub use deep_audit::{
     DeepAuditApiMode, DeepAuditConnectionResult, DeepAuditError, DeepAuditManager,
-    DeepAuditPreview, DeepAuditResult, DeepAuditSettings,
+    DeepAuditPreview, DeepAuditResult, DeepAuditSelection, DeepAuditSettings,
 };
 pub use lifecycle::{DeleteSkillResult, LifecyclePreview, LifecycleResult};
 
@@ -24,7 +37,7 @@ use std::{
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicU64, Ordering},
-        Arc, RwLock,
+        Arc, Mutex, RwLock,
     },
     time::{Instant, SystemTime},
 };
@@ -90,7 +103,9 @@ impl WorkspaceError {
 pub struct Workspace {
     codex_home: PathBuf,
     index: Arc<RwLock<Option<CatalogIndex>>>,
+    mutations: Arc<Mutex<()>>,
     metrics: Arc<WorkspaceMetrics>,
+    export_plans: Arc<Mutex<HashMap<String, bundle_export::ExportPlanState>>>,
 }
 
 #[derive(Default)]
@@ -326,7 +341,7 @@ struct AgentInterface {
 }
 
 #[derive(Clone)]
-struct InternalSkill {
+pub(super) struct InternalSkill {
     summary: SkillSummary,
     source: Source,
     root: PathBuf,
@@ -340,36 +355,112 @@ struct InternalSkill {
 struct CatalogIndex {
     by_id: HashMap<String, InternalSkill>,
     order: Vec<String>,
+    all_by_id: HashMap<String, InternalSkill>,
+    ids_by_name: HashMap<String, Vec<String>>,
 }
 
 impl CatalogIndex {
     fn from_skills(skills: Vec<InternalSkill>) -> Self {
-        let mut newest_plugins: HashMap<String, InternalSkill> = HashMap::new();
-        let mut indexed = Vec::new();
+        let mut index = Self {
+            by_id: HashMap::new(),
+            order: Vec::new(),
+            all_by_id: HashMap::new(),
+            ids_by_name: HashMap::new(),
+        };
         for skill in skills {
-            if skill.source == Source::Plugin {
-                let replace = newest_plugins
-                    .get(&skill.summary.name)
-                    .map(|old| old.modified < skill.modified)
-                    .unwrap_or(true);
-                if replace {
-                    newest_plugins.insert(skill.summary.name.clone(), skill);
+            index.insert_complete(skill);
+        }
+        let names = index.ids_by_name.keys().cloned().collect::<Vec<_>>();
+        index.refresh_display_names(names);
+        index
+    }
+
+    fn insert_complete(&mut self, skill: InternalSkill) {
+        let id = skill.summary.id.clone();
+        let name = skill.summary.name.clone();
+        if let Some(previous) = self.all_by_id.insert(id.clone(), skill) {
+            if let Some(ids) = self.ids_by_name.get_mut(&previous.summary.name) {
+                ids.retain(|existing| existing != &id);
+                if ids.is_empty() {
+                    self.ids_by_name.remove(&previous.summary.name);
                 }
-            } else {
-                indexed.push(skill);
             }
         }
-        indexed.extend(newest_plugins.into_values());
-        let by_id = indexed
+        let ids = self.ids_by_name.entry(name).or_default();
+        if !ids.iter().any(|existing| existing == &id) {
+            ids.push(id);
+        }
+    }
+
+    fn remove_complete(&mut self, id: &str) -> Option<InternalSkill> {
+        let previous = self.all_by_id.remove(id)?;
+        if let Some(ids) = self.ids_by_name.get_mut(&previous.summary.name) {
+            ids.retain(|existing| existing != id);
+            if ids.is_empty() {
+                self.ids_by_name.remove(&previous.summary.name);
+            }
+        }
+        Some(previous)
+    }
+
+    fn refresh_display_names<I>(&mut self, names: I)
+    where
+        I: IntoIterator<Item = String>,
+    {
+        let mut refreshed = Vec::new();
+        for name in names {
+            if !refreshed.iter().any(|existing| existing == &name) {
+                refreshed.push(name);
+            }
+        }
+        for name in refreshed {
+            self.by_id.retain(|_, skill| skill.summary.name != name);
+            let ids = self.ids_by_name.get(&name).cloned().unwrap_or_default();
+            let mut newest_plugin: Option<InternalSkill> = None;
+            for id in ids {
+                let Some(skill) = self.all_by_id.get(&id).cloned() else {
+                    continue;
+                };
+                if skill.source == Source::Plugin {
+                    let replace = newest_plugin
+                        .as_ref()
+                        .map(|old| {
+                            old.modified < skill.modified
+                                || (old.modified == skill.modified
+                                    && old.summary.id < skill.summary.id)
+                        })
+                        .unwrap_or(true);
+                    if replace {
+                        newest_plugin = Some(skill);
+                    }
+                } else {
+                    self.by_id.insert(skill.summary.id.clone(), skill);
+                }
+            }
+            if let Some(skill) = newest_plugin {
+                self.by_id.insert(skill.summary.id.clone(), skill);
+            }
+        }
+        self.resort();
+    }
+
+    fn all_name_matches(&self, name: &str) -> Vec<InternalSkill> {
+        let mut matches = self
+            .ids_by_name
+            .get(name)
             .into_iter()
-            .map(|skill| (skill.summary.id.clone(), skill))
-            .collect();
-        let mut index = Self {
-            by_id,
-            order: Vec::new(),
-        };
-        index.resort();
-        index
+            .flatten()
+            .filter_map(|id| self.all_by_id.get(id).cloned())
+            .collect::<Vec<_>>();
+        matches.sort_by(|left, right| {
+            left.source
+                .rank()
+                .cmp(&right.source.rank())
+                .then_with(|| left.summary.display_name.cmp(&right.summary.display_name))
+                .then_with(|| left.directory.cmp(&right.directory))
+                .then_with(|| left.summary.id.cmp(&right.summary.id))
+        });
+        matches
     }
 
     fn resort(&mut self) {
@@ -385,13 +476,21 @@ impl CatalogIndex {
     }
 
     fn upsert(&mut self, skill: InternalSkill) {
-        self.by_id.insert(skill.summary.id.clone(), skill);
-        self.resort();
+        let mut names = Vec::new();
+        if let Some(previous) = self.remove_complete(&skill.summary.id) {
+            names.push(previous.summary.name);
+        }
+        names.push(skill.summary.name.clone());
+        self.insert_complete(skill);
+        self.refresh_display_names(names);
     }
 
     fn remove(&mut self, id: &str) {
+        let Some(previous) = self.remove_complete(id) else {
+            return;
+        };
         self.by_id.remove(id);
-        self.order.retain(|existing| existing != id);
+        self.refresh_display_names([previous.summary.name]);
     }
 }
 
@@ -408,7 +507,9 @@ impl Workspace {
         Self {
             codex_home,
             index: Arc::new(RwLock::new(None)),
+            mutations: Arc::new(Mutex::new(())),
             metrics: Arc::new(WorkspaceMetrics::default()),
+            export_plans: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -418,6 +519,10 @@ impl Workspace {
     }
 
     pub fn refresh_skills(&self) -> Result<Catalog, WorkspaceError> {
+        let _mutation = self
+            .mutations
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         let index = self.scan_catalog_index()?;
         *self
             .index
@@ -487,6 +592,10 @@ impl Workspace {
         expected_hash: &str,
     ) -> Result<SaveResult, WorkspaceError> {
         self.validate_draft(markdown)?;
+        let _mutation = self
+            .mutations
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         let skill = self.editable_skill_current(id)?;
         if expected_hash.is_empty() || expected_hash != hash(&skill.markdown) {
             return Err(WorkspaceError::Conflict);
@@ -551,6 +660,10 @@ impl Workspace {
         F: FnOnce(&Path, &str) -> Result<(), WorkspaceError>,
     {
         self.validate_draft(markdown)?;
+        let _mutation = self
+            .mutations
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         if expected_draft_hash.is_empty() || expected_draft_hash != hash(markdown) {
             return Err(WorkspaceError::PreviewMismatch);
         }
@@ -687,7 +800,7 @@ impl Workspace {
         Ok(())
     }
 
-    fn scan_catalog_index(&self) -> Result<CatalogIndex, WorkspaceError> {
+    pub(super) fn fresh_all_skills(&self) -> Result<Vec<InternalSkill>, WorkspaceError> {
         let started = Instant::now();
         let roots = self.roots();
         let mut skills = Vec::new();
@@ -707,7 +820,56 @@ impl Workspace {
             _elapsed / 1_000_000,
             skills.len()
         );
-        Ok(CatalogIndex::from_skills(skills))
+        Ok(skills)
+    }
+
+    pub(super) fn fresh_all_skills_for_mutation(
+        &self,
+    ) -> Result<Vec<InternalSkill>, WorkspaceError> {
+        let started = Instant::now();
+        let roots = self.roots();
+        let mut skills = Vec::new();
+        skills.extend(self.scan_immediate_strict(&roots.personal, Source::Personal, false)?);
+        skills.extend(self.scan_immediate_strict(&roots.disabled, Source::Disabled, false)?);
+        skills.extend(self.scan_immediate_strict(&roots.system, Source::System, true)?);
+        skills.extend(self.scan_recursive_strict(&roots.plugin, Source::Plugin, 0)?);
+        skills.extend(self.scan_immediate_strict(&roots.archive, Source::Archive, false)?);
+        self.record_timing(
+            &self.metrics.full_scans,
+            &self.metrics.full_scan_nanos,
+            started,
+        );
+        Ok(skills)
+    }
+
+    fn scan_catalog_index(&self) -> Result<CatalogIndex, WorkspaceError> {
+        Ok(CatalogIndex::from_skills(self.fresh_all_skills()?))
+    }
+
+    pub(super) fn cached_name_matches(
+        &self,
+        name: &str,
+    ) -> Result<Vec<InternalSkill>, WorkspaceError> {
+        self.ensure_index()?;
+        let guard = self.index.read().unwrap_or_else(|error| error.into_inner());
+        Ok(guard
+            .as_ref()
+            .map(|index| index.all_name_matches(name))
+            .unwrap_or_default())
+    }
+
+    pub(super) fn replace_index_from_skills(&self, skills: Vec<InternalSkill>) {
+        *self
+            .index
+            .write()
+            .unwrap_or_else(|error| error.into_inner()) = Some(CatalogIndex::from_skills(skills));
+    }
+
+    pub(super) fn invalidate_index(&self) {
+        *self
+            .index
+            .write()
+            .unwrap_or_else(|error| error.into_inner()) = None;
     }
 
     fn find_name_conflict(&self, name: &str) -> Result<Option<NameConflict>, WorkspaceError> {
@@ -822,6 +984,44 @@ impl Workspace {
         Ok(result)
     }
 
+    fn scan_immediate_strict(
+        &self,
+        root: &Path,
+        source: Source,
+        include_hidden: bool,
+    ) -> Result<Vec<InternalSkill>, WorkspaceError> {
+        let metadata = match fs::symlink_metadata(root) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(error) => return Err(error.into()),
+        };
+        if metadata.file_type().is_symlink() || !metadata.is_dir() {
+            return Err(WorkspaceError::UnsafePath);
+        }
+        let entries = match fs::read_dir(root) {
+            Ok(entries) => entries.collect::<Result<Vec<_>, _>>()?,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(error) => return Err(error.into()),
+        };
+        let mut result = Vec::new();
+        for entry in entries {
+            let name = entry.file_name();
+            if !include_hidden && name.to_string_lossy().starts_with('.') {
+                continue;
+            }
+            let kind = entry.file_type()?;
+            if kind.is_symlink() {
+                return Err(WorkspaceError::UnsafePath);
+            }
+            if kind.is_dir() {
+                if let Some(skill) = self.read_skill_strict(&entry.path(), source, root)? {
+                    result.push(skill);
+                }
+            }
+        }
+        Ok(result)
+    }
+
     fn scan_recursive(
         &self,
         root: &Path,
@@ -855,6 +1055,79 @@ impl Workspace {
             }
         }
         Ok(result)
+    }
+
+    fn scan_recursive_strict(
+        &self,
+        root: &Path,
+        source: Source,
+        depth: usize,
+    ) -> Result<Vec<InternalSkill>, WorkspaceError> {
+        if depth > MAX_SCAN_DEPTH {
+            return Err(WorkspaceError::UnsafePath);
+        }
+        let metadata = match fs::symlink_metadata(root) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(error) => return Err(error.into()),
+        };
+        if metadata.file_type().is_symlink() || !metadata.is_dir() {
+            return Err(WorkspaceError::UnsafePath);
+        }
+        let entries = match fs::read_dir(root) {
+            Ok(entries) => entries.collect::<Result<Vec<_>, _>>()?,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(error) => return Err(error.into()),
+        };
+        let mut has_skill = false;
+        for entry in &entries {
+            let kind = entry.file_type()?;
+            if kind.is_symlink() {
+                return Err(WorkspaceError::UnsafePath);
+            }
+            if entry.file_name() == "SKILL.md" {
+                if !kind.is_file() {
+                    return Err(WorkspaceError::UnsafePath);
+                }
+                has_skill = true;
+            }
+        }
+        if has_skill {
+            return Ok(vec![self
+                .read_skill_strict(root, source, root)?
+                .ok_or(WorkspaceError::UnsafePath)?]);
+        }
+        let mut result = Vec::new();
+        for entry in entries {
+            let name = entry.file_name();
+            if name == "node_modules" || name == ".git" {
+                continue;
+            }
+            if entry.file_type()?.is_dir() {
+                result.extend(self.scan_recursive_strict(&entry.path(), source, depth + 1)?);
+            }
+        }
+        Ok(result)
+    }
+
+    fn read_skill_strict(
+        &self,
+        directory: &Path,
+        source: Source,
+        root: &Path,
+    ) -> Result<Option<InternalSkill>, WorkspaceError> {
+        let skill_file = directory.join("SKILL.md");
+        let metadata = match fs::symlink_metadata(&skill_file) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(error.into()),
+        };
+        if metadata.file_type().is_symlink() || !metadata.is_file() {
+            return Err(WorkspaceError::UnsafePath);
+        }
+        self.read_skill(directory, source, root)?
+            .ok_or(WorkspaceError::UnsafePath)
+            .map(Some)
     }
 
     fn read_skill(
@@ -1610,6 +1883,137 @@ mod tests {
             2
         );
         assert_eq!(workspace.metrics_snapshot().full_scans, 2);
+    }
+
+    #[test]
+    fn complete_name_matches_keep_every_source_and_all_plugin_versions() {
+        let (directory, workspace) = workspace();
+        for location in [
+            "skills/versioned-plugin",
+            "skills-disabled/versioned-plugin",
+            "skills/.system/versioned-plugin",
+            "skill-archive/versioned-plugin",
+        ] {
+            write_skill_at(
+                &directory.path().join(location),
+                "versioned-plugin",
+                "Installed Skill.",
+                "1. Run the installed workflow.\n2. Return the result.",
+            );
+        }
+        for version in ["1.0.0", "2.0.0"] {
+            write_skill_at(
+                &directory.path().join(format!(
+                    "plugins/cache/publisher/bundle/{version}/skills/versioned-plugin"
+                )),
+                "versioned-plugin",
+                "Plugin Skill.",
+                &format!("1. Run the {version} workflow.\n2. Return the result."),
+            );
+        }
+
+        let catalog = workspace.list_skills().expect("catalog");
+        assert_eq!(catalog.counts.plugin, 1);
+        assert_eq!(catalog.counts.total, 5);
+        assert_eq!(
+            catalog
+                .skills
+                .iter()
+                .filter(|skill| skill.name == "versioned-plugin")
+                .count(),
+            5
+        );
+
+        let matches = workspace
+            .cached_name_matches("versioned-plugin")
+            .expect("complete plugin matches");
+        assert_eq!(matches.len(), 6);
+        for source in [
+            Source::Personal,
+            Source::Disabled,
+            Source::System,
+            Source::Archive,
+        ] {
+            assert_eq!(
+                matches
+                    .iter()
+                    .filter(|skill| skill.source == source)
+                    .count(),
+                1
+            );
+        }
+        assert_eq!(
+            matches
+                .iter()
+                .filter(|skill| skill.source == Source::Plugin)
+                .count(),
+            2
+        );
+        assert!(matches
+            .iter()
+            .any(|skill| skill.directory.to_string_lossy().contains("/1.0.0/")));
+        assert!(matches
+            .iter()
+            .any(|skill| skill.directory.to_string_lossy().contains("/2.0.0/")));
+        assert_eq!(workspace.metrics_snapshot().full_scans, 1);
+    }
+
+    #[test]
+    fn incremental_personal_upsert_and_remove_update_complete_name_matches() {
+        let (directory, workspace) = workspace();
+        assert_eq!(
+            workspace.list_skills().expect("empty catalog").counts.total,
+            0
+        );
+
+        write_skill(
+            directory.path(),
+            "incremental",
+            "Use when the user asks for an incremental Skill.",
+            "1. Read the request.\n2. Return the incremental result.",
+        );
+        let roots = workspace.roots();
+        let skill = workspace
+            .read_skill(
+                &roots.personal.join("incremental"),
+                Source::Personal,
+                &roots.personal,
+            )
+            .expect("read personal Skill")
+            .expect("personal Skill");
+        let id = skill.summary.id.clone();
+
+        workspace.upsert_index(skill).expect("incremental upsert");
+        assert_eq!(
+            workspace
+                .cached_name_matches("incremental")
+                .expect("upserted match")
+                .len(),
+            1
+        );
+        assert_eq!(
+            workspace
+                .list_skills()
+                .expect("updated catalog")
+                .counts
+                .total,
+            1
+        );
+
+        workspace.remove_from_index(&id);
+        assert!(workspace
+            .cached_name_matches("incremental")
+            .expect("removed match")
+            .is_empty());
+        assert_eq!(
+            workspace
+                .list_skills()
+                .expect("removed catalog")
+                .counts
+                .total,
+            0
+        );
+        assert_eq!(workspace.metrics_snapshot().full_scans, 1);
     }
 
     #[test]

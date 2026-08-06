@@ -79,6 +79,21 @@ An explicit Audit that combines maintained scanner evidence with a
 user-configured cloud semantic review of confirmed Skill files.
 _Avoid_: Automatic upload, Baseline Audit
 
+**External Scanner Adapter**:
+A Studio-owned mapping from one maintained scanner and supported result format
+into the shared evidence model. It is not a general command or plugin system.
+_Avoid_: Scanner plugin SDK, arbitrary command adapter
+
+**Scanner Plan**:
+A side-effect-free, revision-bound description of the scanner identity,
+configuration, data handling, and exact Candidate Skill files to be inspected.
+_Avoid_: Scan result, scanner configuration
+
+**Scanner Audit Contribution**:
+Grounded findings from one Scanner Plan for one exact Candidate Skill revision,
+kept separate from Installation Confirmation and the complete Audit Result.
+_Avoid_: Scanner approval, security certificate
+
 **Cloud Model Profile**:
 The user-owned provider destination, model selection, and protected credential
 used only for confirmed Deep Audits.
@@ -149,3 +164,23 @@ _Avoid_: Universal support, portable by default
 A portable collection of Exportable Skills plus a manifest that identifies and
 hashes every included Skill and file.
 _Avoid_: Backup, installer
+
+**Bundle Manifest**:
+The versioned list of Skill directories and exact file identities carried by a
+Skill Bundle.
+_Avoid_: Archive index, Agent configuration
+
+**Import Classification**:
+The primary relationship of one imported Skill revision to the target catalog:
+new, identical, user conflict, managed conflict, or incompatible.
+_Avoid_: Installation decision, Audit verdict
+
+**Catalog Match**:
+One installed, disabled, archived, system-managed, or plugin-managed Skill whose
+canonical name matches an imported Skill, retained as comparison evidence.
+_Avoid_: Primary conflict, overwrite target
+
+**Import Comparison**:
+Revision and file-level evidence showing how one imported Skill differs from its
+Catalog Matches before an Installation Confirmation.
+_Avoid_: Diff approval, automatic merge

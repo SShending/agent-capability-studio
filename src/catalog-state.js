@@ -28,6 +28,23 @@ export function replaceCatalogSkill(skills, counts, previousId, nextSkill) {
   };
 }
 
+export function addCatalogSkill(skills, counts, skill) {
+  if (skills.some((item) => item.id === skill.id)) {
+    return { skills, counts: { ...counts } };
+  }
+  return {
+    skills: [...skills, skill],
+    counts: adjustCounts(counts, skill, 1)
+  };
+}
+
+export function applyInstallOutcome(skills, counts, outcome) {
+  if (!outcome?.skill) return { skills, counts: { ...counts } };
+  return outcome.priorSkillId
+    ? replaceCatalogSkill(skills, counts, outcome.priorSkillId, outcome.skill)
+    : addCatalogSkill(skills, counts, outcome.skill);
+}
+
 export function removeCatalogSkill(skills, counts, id) {
   const removed = skills.find((skill) => skill.id === id);
   return {

@@ -2,13 +2,18 @@
 
 ## Current Position
 
-- Active phase: Phase 3 GitHub and local candidate audit
-- In-progress task: 3.3 Present candidate evidence in the desktop GUI
-- Next task: 3.4 Implement explicit installation with conflict and destination checks
-- Last accepted milestone: Phase 2 guided creation and personal lifecycle
-- Blocking decision: none; the GitHub snapshot adapter direction was accepted
-  on 2026-08-01
+- Active phase: Phase 5 public v0.1 release
+- Current task: 5.1 complete accessibility, dark-mode, native-window visual QA,
+  and interface localization
+- Next task: 5.2 add CI, release metadata, signing, notarization, and packaging
+- Last accepted milestone: Task 4.5 trusted server-installation handoff,
+  accepted by the owner on 2026-08-06
+- Blocking decision: none; the owner simplified server migration on 2026-08-06
+  to direct Codex-assisted installation of a trusted Mac export, with no custom
+  headless Bundle CLI or repeated semantic audit
 - Validation item: confirm the final minimum macOS version before public release
+- Outstanding acceptance: Task 4.6 real Mac-to-Linux migration remains a
+  release gate; it has not been marked complete without a real server result
 
 ## Phase 1 - Native Desktop Vertical Slice
 
@@ -78,6 +83,8 @@ Tasks:
 
 ## Phase 3 - GitHub And Local Candidate Audit
 
+Status: accepted by the project owner on 2026-08-04.
+
 Detailed plan: [03-github-local-candidate-audit.md](docs/phases/03-github-local-candidate-audit.md)
 
 Outcome: a user submits a public GitHub Skill or local directory, reviews exact
@@ -96,11 +103,14 @@ Tasks:
 - [x] 3.1 Validate the safest maintained GitHub acquisition approach. Research:
   [github-acquisition-options.md](docs/research/github-acquisition-options.md).
 - [x] 3.2 Implement contained temporary staging for GitHub and local candidates.
-- [ ] 3.3 Present files, hashes, compatibility, findings, and exact version (implemented; pending first-user acceptance).
-- [ ] 3.4 Implement explicit installation with conflict and destination checks.
-- [ ] 3.5 Define and test the external scanner evidence adapter interface.
+- [x] 3.3 Present files, hashes, compatibility, findings, and exact version.
+- [x] 3.4 Implement explicit installation with conflict and destination checks.
+- [x] 3.5 Add consent-bound cloud Deep Audit for staged candidates.
+- [x] 3.6 Define and test the external scanner evidence adapter interface.
 
 ## Phase 4 - Skill Bundle Migration
+
+Detailed plan: [04-skill-bundle-migration.md](docs/phases/04-skill-bundle-migration.md)
 
 Outcome: eligible personal Skills move between machines through a versioned,
 hash-verified bundle with staging and conflict review.
@@ -117,13 +127,24 @@ Acceptance:
 
 Tasks:
 
-- [ ] 4.1 Specify and fixture-test the versioned Skill Bundle format.
-- [ ] 4.2 Implement safe export with eligibility and secret checks.
-- [ ] 4.3 Implement contained parsing, verification, and staging.
-- [ ] 4.4 Add conflict classification, diff review, and explicit installation.
-- [ ] 4.5 Verify Mac-to-server and server-to-Mac migration scenarios.
+- [x] 4.1 Specify and fixture-test the versioned Skill Bundle format.
+- [x] 4.2 Implement safe export with eligibility and secret checks (accepted by
+  the project owner on 2026-08-05).
+- [x] 4.3 Implement contained parsing, verification, and staging (accepted by
+  the project owner on 2026-08-05).
+- [x] 4.4 Add conflict classification, diff review, and explicit installation
+  (accepted by the project owner on 2026-08-06).
+- [x] 4.5 Document and validate direct Codex-assisted installation of a trusted
+  Mac export on the owner's Linux server, using existing transfer tools and no
+  repeated semantic audit or custom CLI. The export receipt provides a tested
+  copyable server instruction (desktop handoff accepted by the project owner on
+  2026-08-06; real server validation remains in Task 4.6).
+- [ ] 4.6 Verify the real Mac-to-Linux migration, including identical skips and
+  explicit handling of different same-name server content.
 
 ## Phase 5 - Public v0.1 Release
+
+Detailed plan: [05-public-v01-release.md](docs/phases/05-public-v01-release.md)
 
 Outcome: a documented, signed, notarized macOS release suitable for
 non-programmers and an MIT-licensed public repository.
@@ -139,7 +160,10 @@ Acceptance:
 
 Tasks:
 
-- [ ] 5.1 Complete accessibility, dark-mode, and native-window visual QA.
+- [ ] 5.1 Complete accessibility, dark-mode, native-window visual QA, and real
+  Simplified Chinese/English localization with a persistent interface-language
+  setting. Do not expose a language selector until all common-path strings and
+  error messages switch consistently.
 - [ ] 5.2 Add CI, release metadata, signing, notarization, and packaging.
 - [ ] 5.3 Reconcile README, license, product screenshots, and limitations.
 - [ ] 5.4 Run clean-machine acceptance and publish the v0.1 artifacts.
