@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
 export const desktop = {
+  setInterfaceLocale: (locale) => invoke("set_interface_locale", { locale }),
   listSkills: () => invoke("list_skills"),
   refreshSkills: () => invoke("refresh_skills"),
   getSkill: (id) => invoke("get_skill", { id }),
@@ -79,9 +80,19 @@ export const desktop = {
   discardStagedCandidate: (sessionId) => invoke("discard_staged_candidate", { sessionId }),
   getDeepAuditSettings: () => invoke("get_deep_audit_settings"),
   saveDeepAuditSettings: (apiMode, endpoint, model, apiKey) =>
-    invoke("save_deep_audit_settings", { apiMode, endpoint, model, apiKey }),
+    invoke("save_deep_audit_settings", {
+      apiMode,
+      endpoint,
+      model,
+      apiKey
+    }),
   testDeepAuditConnection: (apiMode, endpoint, model, apiKey) =>
-    invoke("test_deep_audit_connection", { apiMode, endpoint, model, apiKey }),
+    invoke("test_deep_audit_connection", {
+      apiMode,
+      endpoint,
+      model,
+      apiKey
+    }),
   clearDeepAuditSettings: () => invoke("clear_deep_audit_settings"),
   previewDeepAudit: (id, markdown) => invoke("preview_deep_audit", { id, markdown }),
   runDeepAudit: (id, markdown, selections, expectedCandidateHash, expectedProviderHash) =>

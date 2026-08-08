@@ -84,7 +84,8 @@ may access signing credentials or publish artifacts.
 
 ### Task 5.1 - Accessibility, Appearance, And Localization
 
-- Status: in planning; Phase 5 entry authorized by the owner on 2026-08-06.
+- Status: accepted by the first user on 2026-08-08 after automated verification
+  and native-window acceptance.
 - Outcome: the complete common workflow is readable and operable in light and
   dark appearance, with keyboard and assistive-technology basics, and can switch
   consistently between Simplified Chinese and English.
@@ -93,14 +94,14 @@ may access signing credentials or publish artifacts.
 - Key design: inventory every user-visible string and backend-originated error;
   introduce stable localization keys; persist the chosen language locally; keep
   focus order, focus restoration, labels, live regions, contrast, text fitting,
-  reduced motion, and reduced transparency verifiable.
+  reduced motion, and reduced transparency verifiable. Put Settings and language
+  selection in the native application menu, with `Command+,` opening Settings.
 - Automated verification: localization-key parity, missing-key failure, language
   persistence, dialog focus behavior where testable, production frontend build,
   frontend tests, Rust tests, and warnings-denied Clippy.
-- Human verification: complete create, edit/save, lifecycle, candidate review,
-  Bundle export/import, Settings, and Deep Audit consent in both languages and
-  both appearances; verify keyboard navigation, VoiceOver labels, reduced motion,
-  reduced transparency, and narrow-window text fitting.
+- Human verification: the first user accepted the live Tauri workflow, native
+  Settings and language menus, `Command+,`, password-free Settings opening,
+  appearance behavior, and credential persistence on 2026-08-08.
 
 ### Task 5.2 - CI, Release Metadata, Signing, And Packaging
 
@@ -126,9 +127,12 @@ may access signing credentials or publish artifacts.
   the app, understand cloud-data behavior and audit limitations, migrate Skills,
   report a security issue, and inspect the source license.
 - Affected files: `README.md`, `LICENSE`, `SECURITY.md`, `PRIVACY.md`, contributor
-  guidance if contributions are opened, screenshots, and existing `docs/` files.
+  guidance if contributions are opened, `README.zh-CN.md`, screenshots, and
+  existing `docs/` files.
 - Key design: keep the common path concise; separate user documentation from
-  contributor evidence; publish no machine-specific data; state that Audit is
+  contributor evidence; keep English `README.md` as the GitHub default with a
+  visible Simplified Chinese link and a complete `README.zh-CN.md` that links
+  back to English; publish no machine-specific data; state that Audit is
   evidence, not a security guarantee; document exactly when files leave the Mac.
 - Automated verification: link checks, repository secret/path scan, license and
   metadata consistency, and screenshot asset validation.
@@ -181,3 +185,27 @@ may access signing credentials or publish artifacts.
 - Phase 5 implementation requires the detailed plan to remain aligned with the
   accepted v0.1 boundary. Publication itself remains a separate explicit owner
   action.
+- Task 5.1 implementation on 2026-08-08 added a persistent Simplified
+  Chinese/English localization module with catalog-parity, duplicate-key, static
+  marker, and literal-call coverage tests. The common desktop path, stable error
+  codes, built-in finding titles, compatibility labels, Bundle decisions, and
+  trusted server instruction now follow the selected interface language. The
+  native application menu owns Settings and language selection.
+- The owner replaced session-only and Keychain credential modes with the
+  passwordless local store in ADR 0002. Provider preferences persist separately;
+  API-key files use strict current-user permissions and atomic replacement, and
+  opening Settings checks only credential-file metadata. This deliberately does
+  not claim protection from software already running as the same macOS account.
+- The same pass linked dialogs and tab panels to their accessible labels,
+  strengthened visible keyboard focus, preserved reduced-motion/transparency
+  and high-contrast behavior, and fixed a localization regression where the
+  `仅本机` status text inherited the status-dot dimensions and rendered one
+  character per line.
+- Automated verification covers 21 frontend tests, 110 desktop-core tests, 24
+  Bundle-core tests, the production frontend build, warnings-denied workspace
+  Clippy, and diff checks. The production JavaScript chunk is about 550 kB
+  uncompressed and 133 kB gzip after carrying both locale catalogs; Vite reports
+  its advisory 500 kB chunk warning, but no release-size or runtime failure.
+- Native visual automation was unavailable because the in-app browser connection
+  could not be established and macOS screen capture could not read the display.
+  The owner completed the required live Tauri acceptance on 2026-08-08.

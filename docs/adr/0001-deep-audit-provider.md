@@ -1,8 +1,8 @@
 # ADR 0001: Deep Audit Provider And Credential Storage
 
-- Status: accepted
+- Status: accepted; credential-storage decision superseded by ADR 0002
 - Date: 2026-07-30
-- Last updated: 2026-07-31
+- Last updated: 2026-08-08
 
 ## Context
 

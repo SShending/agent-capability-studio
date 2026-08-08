@@ -1,5 +1,6 @@
 import { createIcons, icons } from "lucide";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
+import { listen } from "@tauri-apps/api/event";
 import { desktop } from "./desktop-bridge.js";
 import {
   addCatalogSkill,
@@ -21,10 +22,15 @@ import {
   isCurrentImportPreview,
   setImportReview
 } from "./bundle-workflow-state.js";
+import { createLocalization } from "./localization.js";
 
 window.lucide = {
   createIcons: (options = {}) => createIcons({ icons, ...options })
 };
+
+const localization = createLocalization({ storage: window.localStorage, document });
+const t = (key, values) => localization.t(key, values);
+localization.apply();
 
 const state = {
   skills: [],
@@ -43,7 +49,7 @@ const state = {
   confirmAction: null,
   confirmRequiredName: null,
   confirmBusy: false,
-  confirmLabel: "确认",
+  confirmLabel: t("common.confirm"),
   providerTestSequence: 0,
   candidate: null,
   candidateSourceMode: "github",
@@ -52,6 +58,7 @@ const state = {
   bundleExportBusy: false,
   bundleInstallBusy: false,
   bundleInstallReviewStale: false,
+  bundleInstallResult: null,
   bundleWorkflow: createBundleWorkflowState(),
   toastTimer: null
 };
@@ -66,7 +73,6 @@ const elements = {
   create: document.querySelector("#create-skill-button"),
   exportSkills: document.querySelector("#export-skills-button"),
   reviewCandidate: document.querySelector("#review-candidate-button"),
-  settings: document.querySelector("#settings-button"),
   auditStatus: document.querySelector("#audit-status"),
   auditLabel: document.querySelector("#audit-label"),
   auditIssueList: document.querySelector("#audit-issue-list"),
@@ -222,24 +228,33 @@ const elements = {
   toastMessage: document.querySelector("#toast-message")
 };
 
-const sourceLabels = {
-  personal: "个人",
-  disabled: "已停用",
-  system: "系统",
-  plugin: "插件",
-  archive: "归档"
-};
+function sourceLabel(source) {
+  const key = `source.${source}`;
+  const label = t(key);
+  return label === key ? source : label;
+}
 
-const skillStateLabels = {
-  active: "启用",
-  disabled: "停用",
-  archived: "归档"
-};
+function skillStateLabel(stateValue) {
+  return {
+    active: t("detail.active"),
+    disabled: t("detail.disabled"),
+    archived: t("detail.archived")
+  }[stateValue] || stateValue;
+}
 
 const deepAuditApiModeLabels = {
   chatCompletions: "Chat Completions",
   responses: "Responses"
 };
+
+function localizedError(error) {
+  const key = error?.code ? `error.code.${error.code}` : null;
+  if (key) {
+    const message = t(key);
+    if (message !== key) return message;
+  }
+  return error?.message || t("error.generic");
+}
 
 function refreshIcons() {
   window.lucide?.createIcons({ attrs: { "aria-hidden": "true" } });
@@ -255,7 +270,7 @@ async function api(url, options = {}) {
   if (detail && options.method === "PUT") {
     return desktop.saveDraft(decodeURIComponent(detail[1]), body.markdown, body.expectedHash);
   }
-  throw new Error("此操作将在后续阶段提供。");
+  throw new Error(t("error.operationUnavailable"));
 }
 
 function initials(name) {
@@ -268,7 +283,7 @@ function initials(name) {
 }
 
 function formatDate(value) {
-  return new Intl.DateTimeFormat("zh-CN", {
+  return new Intl.DateTimeFormat(localization.locale, {
     year: "numeric",
     month: "short",
     day: "numeric"
@@ -296,10 +311,10 @@ function skillIcon(skill, className = "skill-icon") {
 }
 
 function visibleSkills() {
-  const query = state.query.trim().toLocaleLowerCase("zh-CN");
+  const query = state.query.trim().toLocaleLowerCase(localization.locale);
   const filtered = state.skills.filter((skill) => {
     const matchesSource = state.source === "all" || skill.source === state.source;
-    const haystack = `${skill.name} ${skill.displayName} ${skill.summary} ${skill.description}`.toLocaleLowerCase("zh-CN");
+    const haystack = `${skill.name} ${skill.displayName} ${skill.summary} ${skill.description}`.toLocaleLowerCase(localization.locale);
     return matchesSource && (!query || haystack.includes(query));
   });
 
@@ -330,7 +345,7 @@ async function inspectHealthIssue(skill) {
   try {
     await openEditor(skill.id);
   } catch (error) {
-    showToast(error.message, true);
+    showToast(localizedError(error), true);
   }
 }
 
@@ -340,7 +355,7 @@ function renderHealthIssues() {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "audit-issue";
-    button.title = `查看 ${skill.displayName} 的阻断问题`;
+    button.title = t("health.issueTitle", { name: skill.displayName });
     button.setAttribute("aria-label", button.title);
     button.innerHTML = '<i data-lucide="circle-alert"></i><span></span><i data-lucide="chevron-right"></i>';
     button.querySelector("span").textContent = skill.displayName;
@@ -362,8 +377,8 @@ function updateCounts() {
   elements.auditStatus.classList.toggle("is-good", !counts.needsAttention);
   elements.auditStatus.classList.toggle("has-issues", Boolean(counts.needsAttention));
   elements.auditLabel.textContent = counts.needsAttention
-    ? `${counts.needsAttention} 项存在阻断问题`
-    : "个人 Skill 状态正常";
+    ? t("health.needsAttention", { count: counts.needsAttention })
+    : t("health.normal");
   renderHealthIssues();
 }
 
@@ -379,14 +394,17 @@ function renderList() {
   const skills = visibleSkills();
   elements.list.replaceChildren();
   elements.empty.hidden = skills.length > 0;
-  elements.resultSummary.textContent = `${skills.length} 个结果 · ${state.counts.total || 0} 个已收录`;
+  elements.resultSummary.textContent = t("list.results", {
+    visible: skills.length,
+    total: state.counts.total || 0
+  });
 
   for (const skill of skills) {
     const row = document.createElement("button");
     row.type = "button";
     row.className = `skill-row${skill.id === state.selectedId ? " is-selected" : ""}`;
     row.dataset.id = skill.id;
-    row.setAttribute("aria-label", `查看 ${skill.displayName}`);
+    row.setAttribute("aria-label", t("list.viewSkill", { name: skill.displayName }));
     row.setAttribute("aria-pressed", String(skill.id === state.selectedId));
 
     const identity = document.createElement("span");
@@ -405,12 +423,16 @@ function renderList() {
 
     const source = document.createElement("span");
     source.className = `source-badge ${skill.source}`;
-    source.textContent = sourceLabels[skill.source];
+    source.textContent = sourceLabel(skill.source);
 
     const trigger = document.createElement("span");
     const readonlySource = ["system", "plugin"].includes(skill.source);
     trigger.className = `trigger-badge ${readonlySource ? "source-managed" : "good"}`;
-    trigger.textContent = readonlySource ? "来源管理" : skill.triggerMode === "explicit" ? "明确点名" : "按意图触发";
+    trigger.textContent = readonlySource
+      ? t("trigger.sourceManaged")
+      : skill.triggerMode === "explicit"
+        ? t("trigger.explicitShort")
+        : t("trigger.contextualShort");
 
     const files = document.createElement("span");
     files.className = "file-count";
@@ -443,7 +465,7 @@ async function selectSkill(id) {
     state.detail = await api(`/api/skills/${encodeURIComponent(id)}`);
     renderDetail();
   } catch (error) {
-    showToast(error.message, true);
+    showToast(localizedError(error), true);
   }
 }
 
@@ -462,21 +484,17 @@ function renderDetail() {
   newIcon.id = "detail-icon";
   icon.replaceWith(newIcon);
   document.querySelector("#detail-title").textContent = skill.displayName;
-  document.querySelector("#detail-source").textContent = sourceLabels[skill.source];
+  document.querySelector("#detail-source").textContent = sourceLabel(skill.source);
   document.querySelector("#detail-description").textContent = skill.summary;
   document.querySelector("#detail-state").textContent = ["system", "plugin"].includes(skill.source)
-    ? "随来源启用"
-    : skill.state === "active"
-      ? "启用"
-      : skill.state === "disabled"
-        ? "停用"
-        : "已归档";
+    ? t("detail.sourceEnabled")
+    : skillStateLabel(skill.state);
   document.querySelector("#detail-trigger").textContent = ["system", "plugin"].includes(skill.source)
-    ? "由安装来源管理"
+    ? t("trigger.sourceManagedDetail")
     : skill.triggerMode === "explicit"
-      ? "仅在明确点名时触发"
-      : "可根据任务意图触发";
-  document.querySelector("#detail-files").textContent = `${skill.fileCount} 个`;
+      ? t("trigger.explicitDetail")
+      : t("trigger.contextualDetail");
+  document.querySelector("#detail-files").textContent = t("common.count", { count: skill.fileCount });
   document.querySelector("#detail-updated").textContent = formatDate(skill.modifiedAt);
   document.querySelector("#detail-path").textContent = skill.path;
   document.querySelector("#detail-markdown").textContent = skill.markdown;
@@ -485,24 +503,24 @@ function renderDetail() {
   actions.replaceChildren();
   if (skill.source === "personal") {
     actions.append(
-      actionButton("编辑", "square-pen", "primary-button", () => openEditor(skill.id)),
-      actionButton("停用", "circle-pause", "secondary-button", () => requestSkillLifecycle("disable", skill)),
-      actionButton("归档", "archive", "secondary-button", () => requestSkillLifecycle("archive", skill))
+      actionButton(t("detail.edit"), "square-pen", "primary-button", () => openEditor(skill.id)),
+      actionButton(t("detail.disable"), "circle-pause", "secondary-button", () => requestSkillLifecycle("disable", skill)),
+      actionButton(t("detail.archive"), "archive", "secondary-button", () => requestSkillLifecycle("archive", skill))
     );
   } else if (skill.source === "disabled") {
     actions.append(
-      actionButton("重新启用", "circle-play", "primary-button", () => requestSkillLifecycle("enable", skill)),
-      actionButton("归档", "archive", "secondary-button", () => requestSkillLifecycle("archive", skill))
+      actionButton(t("detail.enable"), "circle-play", "primary-button", () => requestSkillLifecycle("enable", skill)),
+      actionButton(t("detail.archive"), "archive", "secondary-button", () => requestSkillLifecycle("archive", skill))
     );
   } else if (skill.source === "archive") {
     actions.append(
-      actionButton("恢复", "archive-restore", "primary-button", () => requestSkillLifecycle("restore", skill)),
-      actionButton("永久删除", "trash-2", "danger-button", () => requestSkillLifecycle("delete", skill))
+      actionButton(t("detail.restore"), "archive-restore", "primary-button", () => requestSkillLifecycle("restore", skill)),
+      actionButton(t("detail.delete"), "trash-2", "danger-button", () => requestSkillLifecycle("delete", skill))
     );
   } else {
     const readonly = document.createElement("span");
     readonly.className = "trigger-badge";
-    readonly.textContent = "只读管理";
+    readonly.textContent = t("detail.readOnly");
     actions.append(readonly);
   }
   refreshIcons();
@@ -521,6 +539,7 @@ function presentConfirmation({ title, message, label, action, tone = "danger", r
   elements.confirmName.placeholder = requiredName || "";
   elements.confirmSubmit.disabled = Boolean(requiredName);
   elements.confirmDialog.showModal();
+  (requiredName ? elements.confirmName : elements.confirmCancel).focus();
 }
 
 function setConfirmationBusy(busy) {
@@ -530,7 +549,7 @@ function setConfirmationBusy(busy) {
   elements.confirmSubmit.disabled = busy || Boolean(
     state.confirmRequiredName && elements.confirmName.value !== state.confirmRequiredName
   );
-  elements.confirmSubmit.textContent = busy ? "正在提交" : state.confirmLabel;
+  elements.confirmSubmit.textContent = busy ? t("confirm.submitting") : state.confirmLabel;
 }
 
 function setEditorMode(mode) {
@@ -571,18 +590,20 @@ function renderGuidedSections(skillDocument) {
 
     const header = documentNode("div", "section-editor-header");
     const level = documentNode("span", "heading-level");
-    level.textContent = section.kind === "preamble" ? "正文" : `H${section.level}`;
+    level.textContent = section.kind === "preamble" ? t("editor.body") : `H${section.level}`;
 
     const title = document.createElement("input");
     title.className = "section-title-input";
     title.value = section.title;
     title.readOnly = !section.titleEditable;
-    title.setAttribute("aria-label", section.titleEditable ? `${section.title} 标题` : section.title);
+    title.setAttribute("aria-label", section.titleEditable
+      ? t("editor.sectionTitle", { title: section.title })
+      : section.title);
     if (section.titleEditable) {
       title.addEventListener("change", () => {
         if (!title.value.trim()) {
           title.value = section.title;
-          showToast("章节标题不能为空。", true);
+          showToast(t("editor.sectionTitleRequired"), true);
           return;
         }
         setDraftMarkdown(updateSkillDocument(state.editor.draftMarkdown, {
@@ -596,8 +617,8 @@ function renderGuidedSections(skillDocument) {
     const toggle = document.createElement("button");
     toggle.type = "button";
     toggle.className = "icon-button compact section-toggle";
-    toggle.title = "收起章节";
-    toggle.setAttribute("aria-label", `收起 ${section.title}`);
+    toggle.title = t("editor.collapseSection");
+    toggle.setAttribute("aria-label", t("editor.collapseNamed", { title: section.title }));
     toggle.setAttribute("aria-expanded", "true");
     const toggleIcon = document.createElement("i");
     toggleIcon.dataset.lucide = "chevron-down";
@@ -608,7 +629,7 @@ function renderGuidedSections(skillDocument) {
     content.value = section.content;
     content.spellcheck = false;
     content.rows = Math.min(Math.max(section.content.split(/\r?\n/).length + 1, 3), 12);
-    content.setAttribute("aria-label", `${section.title} 内容`);
+    content.setAttribute("aria-label", t("editor.sectionContent", { title: section.title }));
     content.addEventListener("input", () => {
       setDraftMarkdown(updateSkillDocument(state.editor.draftMarkdown, {
         type: "section-content",
@@ -620,8 +641,11 @@ function renderGuidedSections(skillDocument) {
     toggle.addEventListener("click", () => {
       const expanded = toggle.getAttribute("aria-expanded") === "true";
       toggle.setAttribute("aria-expanded", String(!expanded));
-      toggle.title = expanded ? "展开章节" : "收起章节";
-      toggle.setAttribute("aria-label", `${expanded ? "展开" : "收起"} ${title.value}`);
+      toggle.title = expanded ? t("editor.expandSection") : t("editor.collapseSection");
+      toggle.setAttribute("aria-label", t(
+        expanded ? "editor.expandNamed" : "editor.collapseNamed",
+        { title: title.value }
+      ));
       article.classList.toggle("is-collapsed", expanded);
       content.hidden = expanded;
       toggleIcon.dataset.lucide = expanded ? "chevron-right" : "chevron-down";
@@ -649,7 +673,11 @@ function editorChanged() {
 function updateEditorStatus() {
   const changed = editorChanged();
   const creating = state.editor?.isNew;
-  elements.draftStatus.textContent = creating ? "尚未创建" : changed ? "有未保存修改" : "未修改";
+  elements.draftStatus.textContent = creating
+    ? t("editor.notCreated")
+    : changed
+      ? t("editor.unsaved")
+      : t("editor.unchanged");
   elements.draftStatus.classList.toggle("is-dirty", changed);
   elements.saveDraft.disabled = creating
     ? !state.editor?.preview?.canCreate || state.editor.auditLoading
@@ -674,12 +702,12 @@ function renderCreationPreview(preview) {
   const creating = Boolean(state.editor?.isNew);
   elements.creationPreview.hidden = !creating;
   if (!creating) return;
-  elements.creationDestination.textContent = preview?.destination || "等待有效名称";
+  elements.creationDestination.textContent = preview?.destination || t("audit.waitingName");
   elements.creationState.textContent = preview?.conflict
-    ? `与${sourceLabels[preview.conflict.source] || preview.conflict.source}来源中的同名 Skill 冲突`
+    ? t("audit.creationConflict", { source: sourceLabel(preview.conflict.source) })
     : preview?.canCreate
-      ? "可创建"
-      : "请解决阻断项后再创建";
+      ? t("audit.createReady")
+      : t("audit.resolveBeforeCreate");
   elements.creationPreview.classList.toggle("has-conflict", Boolean(preview?.conflict));
   elements.creationPreview.classList.toggle("is-ready", Boolean(preview?.canCreate));
 }
@@ -691,17 +719,17 @@ function scheduleDraftAudit() {
 }
 
 function renderAuditLoading() {
-  elements.auditVerdict.textContent = "正在检查";
-  elements.auditVerdictBadge.textContent = "检查中";
+  elements.auditVerdict.textContent = t("audit.loadingTitle");
+  elements.auditVerdictBadge.textContent = t("audit.inProgress");
   elements.auditVerdictBadge.className = "verdict-badge is-loading";
-  elements.auditSummary.textContent = "正在分析结构、触发范围和高影响操作。";
+  elements.auditSummary.textContent = t("audit.loadingSummary");
   elements.auditDraft.disabled = true;
   updateEditorStatus();
 }
 
 function renderAuditError(message) {
-  elements.auditVerdict.textContent = "检查未完成";
-  elements.auditVerdictBadge.textContent = "错误";
+  elements.auditVerdict.textContent = t("audit.failed");
+  elements.auditVerdictBadge.textContent = t("common.error");
   elements.auditVerdictBadge.className = "verdict-badge is-block";
   elements.auditSummary.textContent = message;
   elements.findingCount.textContent = "0";
@@ -718,22 +746,26 @@ function renderFinding(item) {
   const marker = document.createElement("span");
   marker.className = "finding-marker";
   const title = document.createElement("strong");
-  title.textContent = item.title;
+  const titleKey = `finding.${item.id}.title`;
+  const explanationKey = `finding.${item.id}.explanation`;
+  title.textContent = t(titleKey) === titleKey ? item.title : t(titleKey);
   const severity = document.createElement("span");
   severity.className = `severity-label is-${item.severity}`;
-  severity.textContent = { blocker: "阻断", warning: "警告", info: "信息" }[item.severity] || item.severity;
+  severity.textContent = t(`audit.severity.${item.severity}`);
   const confidence = document.createElement("span");
   confidence.className = "confidence-label";
   confidence.textContent = item.disposition === "dismissed"
-    ? "复核后排除"
-    : { high: "高置信", medium: "中置信", low: "低置信" }[item.confidence] || item.confidence;
+    ? t("audit.dismissed")
+    : t(`audit.confidence.${item.confidence}`);
   heading.append(marker, title, severity, confidence);
 
   const explanation = document.createElement("p");
-  explanation.textContent = item.explanation;
+  explanation.textContent = t(explanationKey) === explanationKey
+    ? item.explanation
+    : t(explanationKey);
   const evidence = document.createElement("details");
   const summary = document.createElement("summary");
-  summary.textContent = "查看证据";
+  summary.textContent = t("audit.viewEvidence");
   const evidenceText = document.createElement("p");
   evidenceText.textContent = item.evidence;
   evidence.append(summary, evidenceText);
@@ -751,7 +783,7 @@ function renderFinding(item) {
   if (item.reviewNote) {
     const review = document.createElement("p");
     review.className = "review-note";
-    review.textContent = `误报复核：${item.reviewNote}`;
+    review.textContent = t("audit.falsePositiveReview", { note: item.reviewNote });
     row.append(review);
   }
   return row;
@@ -766,9 +798,9 @@ function renderDeepAuditOutcome(result, view) {
   const confirmed = result.findings.filter((finding) => finding.disposition !== "dismissed");
   const dismissed = result.findings.length - confirmed.length;
   const verdicts = {
-    clear: ["未发现经复核的语义风险", "未命中", "这次云端审查没有保留风险项；不代表 Skill 安全。"],
-    review: ["发现需要人工复核的行为", "需复核", "请根据文件证据判断这些能力是否符合预期。"],
-    block: ["发现高影响语义风险", "高风险", "模型审查保留了高影响风险项，请先修改或人工确认来源。"]
+    clear: [t("audit.deep.clearTitle"), t("audit.deep.clearBadge"), t("audit.deep.clearSummary")],
+    review: [t("audit.deep.reviewTitle"), t("audit.deep.reviewBadge"), t("audit.deep.reviewSummary")],
+    block: [t("audit.deep.blockTitle"), t("audit.deep.blockBadge"), t("audit.deep.blockSummary")]
   };
   const [title, badge, summary] = verdicts[result.verdict] || verdicts.review;
   view.verdict.textContent = title;
@@ -776,7 +808,13 @@ function renderDeepAuditOutcome(result, view) {
   view.badge.className = `verdict-badge is-${result.verdict}`;
   view.summary.textContent = summary;
   const apiMode = deepAuditApiModeLabels[result.apiMode] || result.apiMode;
-  view.meta.textContent = `${apiMode} · ${result.model} · ${result.files.length} 个文件 · ${result.requestCount} 次请求${dismissed ? ` · 排除 ${dismissed} 项` : ""}`;
+  view.meta.textContent = t("audit.deep.meta", {
+    mode: apiMode,
+    model: result.model,
+    files: result.files.length,
+    requests: result.requestCount,
+    dismissed: dismissed ? t("audit.deep.dismissedSuffix", { count: dismissed }) : ""
+  });
   view.findingList.replaceChildren(...result.findings.map(renderFinding));
   refreshIcons();
 }
@@ -826,6 +864,7 @@ function setCandidateSourceMode(mode) {
 
 function openCandidateIntake() {
   if (elements.candidateIntakeDialog.open) return;
+  if (!state.candidateLocalPath) elements.candidateLocalPath.textContent = t("candidate.noFolder");
   setCandidateSourceMode("github");
   elements.candidateIntakeDialog.showModal();
   elements.candidateGithubUrl.focus();
@@ -837,13 +876,13 @@ async function chooseCandidateFolder() {
     const selected = await openDialog({
       directory: true,
       multiple: false,
-      title: "选择包含 SKILL.md 的文件夹"
+      title: t("candidate.chooseFolderTitle")
     });
     if (typeof selected !== "string") return;
     state.candidateLocalPath = selected;
     elements.candidateLocalPath.textContent = selected;
   } catch (error) {
-    showToast(error.message, true);
+    showToast(localizedError(error), true);
   }
 }
 
@@ -859,7 +898,7 @@ function selectedBundleSkillIds() {
 function invalidateBundleExportPlan() {
   if (state.bundleExportBusy) return;
   invalidateExportOperations(state.bundleWorkflow);
-  elements.previewBundleExport.querySelector("span").textContent = "检查导出内容";
+  elements.previewBundleExport.querySelector("span").textContent = t("bundle.previewExport");
   state.bundleExportPlan = null;
   elements.bundleExportReview.hidden = true;
   elements.bundleExportBlocks.hidden = true;
@@ -867,7 +906,7 @@ function invalidateBundleExportPlan() {
   elements.applyBundleExport.disabled = true;
   const checkboxes = [...elements.bundleSkillList.querySelectorAll('input[type="checkbox"]')];
   const selected = checkboxes.filter((input) => input.checked).length;
-  elements.bundleSelectionCount.textContent = `${selected} 项`;
+  elements.bundleSelectionCount.textContent = t("bundle.selectionCount", { count: selected });
   elements.bundleSelectAll.checked = checkboxes.length > 0 && selected === checkboxes.length;
   elements.bundleSelectAll.indeterminate = selected > 0 && selected < checkboxes.length;
   elements.previewBundleExport.disabled = selected === 0;
@@ -892,7 +931,7 @@ function renderBundleSkillSelection() {
     content.append(title, description);
     const count = document.createElement("span");
     count.className = "bundle-skill-file-count";
-    count.textContent = `${skill.fileCount} 个文件`;
+    count.textContent = t("bundle.skillFileCount", { count: skill.fileCount });
     label.append(checkbox, content, count);
     return label;
   });
@@ -900,7 +939,7 @@ function renderBundleSkillSelection() {
   if (!skills.length) {
     const empty = document.createElement("p");
     empty.className = "bundle-export-empty";
-    empty.textContent = "当前没有可导出的启用个人 Skill。";
+    empty.textContent = t("bundle.noExportable");
     elements.bundleSkillList.append(empty);
   }
   invalidateBundleExportPlan();
@@ -913,7 +952,7 @@ function openBundleExport() {
   elements.bundleExportReceipt.hidden = true;
   elements.previewBundleExport.hidden = false;
   elements.applyBundleExport.hidden = false;
-  elements.cancelBundleExport.textContent = "取消";
+  elements.cancelBundleExport.textContent = t("common.cancel");
   elements.closeBundleExport.disabled = false;
   elements.cancelBundleExport.disabled = false;
   elements.bundleExportDialog.removeAttribute("aria-busy");
@@ -948,29 +987,13 @@ function renderBundleExportPlan(plan) {
 }
 
 function bundleExportBlockMessage(finding) {
-  return {
-    "credential-path": "路径看起来用于保存凭据，已阻止导出。",
-    "private-key-material": "文件中发现私钥内容，已阻止导出。",
-    "known-token-format": "文件中发现符合已知令牌格式的内容，已阻止导出。",
-    "credential-assignment": "文件中发现高置信度凭据赋值，已阻止导出。",
-    "resource-limit": "Skill 超过 Bundle v1 的文件、大小或目录深度限制。",
-    "bundle-size-limit": "所选内容超过 Bundle v1 的归档大小限制。",
-    "unsafe-entry": "Skill 包含链接、特殊文件或不受支持的路径。",
-    "source-changed": "检查期间 Skill 发生变化，请重新检查。",
-    "source-not-exportable": "Bundle v1 只导出启用的个人 Skill。",
-    "duplicate-selection": "同一个 Skill 被重复选择。",
-    "skill-not-found": "Skill 已不在当前目录中，请刷新后重试。"
-  }[finding.ruleId] || "该 Skill 当前不能导出。";
+  const key = `bundle.exportBlock.${finding.ruleId}`;
+  const message = t(key);
+  return message === key ? t("bundle.exportBlock.default") : message;
 }
 
 function bundleExportErrorMessage(error) {
-  return {
-    BUNDLE_EXPORT_PLAN_STALE: "导出预览已过期，请重新检查所选 Skills。",
-    BUNDLE_EXPORT_SOURCE_CHANGED: "Skill 在导出前发生变化，请重新检查。",
-    BUNDLE_EXPORT_DESTINATION_EXISTS: "该位置已经有同名文件，请选择新文件名。",
-    BUNDLE_EXPORT_DESTINATION_INVALID: "请选择现有文件夹中的新 .skillbundle 文件。",
-    BUNDLE_LIMIT_EXCEEDED: "所选内容超过 Bundle v1 的大小限制。"
-  }[error?.code] || error?.message || "导出没有完成，请重试。";
+  return localizedError(error);
 }
 
 async function previewBundleExport(event) {
@@ -980,7 +1003,7 @@ async function previewBundleExport(event) {
   const selectionFingerprint = skillIds.join("\0");
   const operation = beginExportOperation(state.bundleWorkflow, "preview", selectionFingerprint);
   elements.previewBundleExport.disabled = true;
-  elements.previewBundleExport.querySelector("span").textContent = "正在检查";
+  elements.previewBundleExport.querySelector("span").textContent = t("common.checking");
   try {
     const plan = await desktop.previewBundleExport(skillIds);
     if (!isCurrentExportOperation(state.bundleWorkflow, operation)
@@ -992,7 +1015,7 @@ async function previewBundleExport(event) {
     }
   } finally {
     if (isCurrentExportOperation(state.bundleWorkflow, operation)) {
-      elements.previewBundleExport.querySelector("span").textContent = "检查导出内容";
+      elements.previewBundleExport.querySelector("span").textContent = t("bundle.previewExport");
       elements.previewBundleExport.disabled = selectedBundleSkillIds().length === 0;
     }
   }
@@ -1028,14 +1051,14 @@ async function applyBundleExport() {
   if (!plan?.canExport) return;
   try {
     const destination = await saveDialog({
-      title: "导出 Skill Bundle",
+      title: t("bundle.exportDialogTitle"),
       defaultPath: "codex-skills.skillbundle",
       filters: [{ name: "Skill Bundle", extensions: ["skillbundle"] }]
     });
     if (typeof destination !== "string") return;
     const operation = beginExportOperation(state.bundleWorkflow, "commit", plan.planRevision);
     setBundleExportBusy(true);
-    elements.applyBundleExport.querySelector("span").textContent = "正在导出";
+    elements.applyBundleExport.querySelector("span").textContent = t("bundle.exporting");
     try {
       const receipt = await desktop.exportSkillBundle(plan.planRevision, destination);
       if (!isCurrentExportOperation(state.bundleWorkflow, operation)
@@ -1046,14 +1069,17 @@ async function applyBundleExport() {
     elements.bundleReceiptSkillCount.textContent = String(receipt.skillCount);
     elements.bundleReceiptFileCount.textContent = String(receipt.fileCount);
     elements.bundleReceiptByteCount.textContent = formatBytes(receipt.archiveBytes);
-    elements.serverInstallPrompt.textContent = serverInstallPrompt(receipt.destination);
+    elements.serverInstallPrompt.textContent = serverInstallPrompt(
+      receipt.destination,
+      localization.locale
+    );
     elements.bundleExportReceipt.hidden = false;
     for (const checkbox of elements.bundleSkillList.querySelectorAll('input[type="checkbox"]')) {
       checkbox.disabled = true;
     }
     elements.previewBundleExport.hidden = true;
     elements.applyBundleExport.hidden = true;
-      elements.cancelBundleExport.textContent = "完成";
+      elements.cancelBundleExport.textContent = t("common.done");
     } catch (error) {
       if (!isCurrentExportOperation(state.bundleWorkflow, operation)) return;
       if (["BUNDLE_EXPORT_PLAN_STALE", "BUNDLE_EXPORT_SOURCE_CHANGED"].includes(error?.code)) {
@@ -1065,7 +1091,7 @@ async function applyBundleExport() {
       showToast(bundleExportErrorMessage(error), true);
     } finally {
       if (finishExportCommit(state.bundleWorkflow, operation)) {
-        elements.applyBundleExport.querySelector("span").textContent = "选择位置并导出";
+        elements.applyBundleExport.querySelector("span").textContent = t("bundle.chooseExport");
         setBundleExportBusy(false);
       }
     }
@@ -1075,45 +1101,23 @@ async function applyBundleExport() {
 }
 
 function importStatusLabel(status) {
-  return { compatible: "符合基础要求", review: "需要复核", incompatible: "不兼容" }[status] || status;
+  return {
+    compatible: t("bundle.importCompatible"),
+    review: t("bundle.importReview"),
+    incompatible: t("bundle.importIncompatible")
+  }[status] || status;
 }
 
 function bundleImportErrorMessage(error) {
-  return {
-    BUNDLE_IMPORT_SOURCE_INVALID: "请选择一个普通的 .skillbundle 文件。",
-    BUNDLE_IMPORT_SOURCE_CHANGED: "读取期间 Bundle 发生变化，请重新选择。",
-    BUNDLE_IMPORT_SESSION_UNKNOWN: "暂存会话已结束，请重新导入。",
-    BUNDLE_IMPORT_SESSION_CHANGED: "暂存内容发生变化，请重新导入。",
-    BUNDLE_LIMIT_EXCEEDED: "该 Bundle 超过允许的大小或文件数量限制。",
-    INVALID_BUNDLE: "该文件不是有效的 Skill Bundle。",
-    INVALID_BUNDLE_MANIFEST: "Bundle 清单无效或不受支持。",
-    BUNDLE_HASH_MISMATCH: "Bundle 中的文件哈希与清单不一致。",
-    UNSUPPORTED_BUNDLE_VERSION: "该 Bundle 版本尚不受支持。",
-    UNSUPPORTED_ARCHIVE_FEATURE: "该归档使用了 Bundle v1 不支持的压缩特性。",
-    UNSAFE_ARCHIVE_ENTRY: "归档中包含不安全的路径、链接或特殊条目。",
-    DUPLICATE_ARCHIVE_ENTRY: "归档中包含重复文件条目。",
-    BUNDLE_MANIFEST_MISSING: "归档中缺少 Skill Bundle 清单。",
-    UNEXPECTED_BUNDLE_FILE: "归档中包含清单未声明的文件。",
-    MISSING_BUNDLE_FILE: "归档缺少清单声明的文件。",
-    BUNDLE_SIZE_MISMATCH: "Bundle 中的文件大小与清单不一致。",
-    BUNDLE_REVISION_MISMATCH: "Skill 或 Bundle revision 与清单证据不一致。",
-    BUNDLE_IO_ERROR: "读取 Bundle 时发生错误。",
-    BUNDLE_IMPORT_IO_ERROR: "无法在应用缓存中暂存该 Bundle。",
-    BUNDLE_INSTALL_REVIEW_STALE: "安装审查已过期，请根据最新同名版本重新选择。",
-    BUNDLE_INSTALL_MATCH_UNKNOWN: "同名版本已变化，请重新查看比较结果。",
-    BUNDLE_INSTALL_FILE_UNKNOWN: "该文件已不属于当前版本比较。",
-    BUNDLE_INSTALL_SELECTION_INVALID: "请至少选择一个当前可安装的导入版本。",
-    BUNDLE_INSTALL_BLOCKED: "当前分类、兼容性或审查结果不允许安装。",
-    BUNDLE_INSTALL_IO_ERROR: "安装提交遇到本地文件错误；请检查每项结果。"
-  }[error?.code] || error?.message || "导入没有完成。";
+  return localizedError(error);
 }
 
 function importAuditPresentation(verdict) {
   return {
-    clear: ["基础审查未发现阻断项", "未阻断", "本地规则未命中阻断问题；这不代表 Skill 安全。"],
-    review: ["基础审查需要人工复核", "需复核", "请逐项检查用途、行为和文件证据。"],
-    block: ["基础审查发现阻断问题", "阻断", "存在阻断项；后续不能直接进入安装确认。"]
-  }[verdict] || ["基础审查结果未知", "未知", "请重新导入并检查审查证据。"];
+    clear: [t("audit.baseline.clearTitle"), t("audit.baseline.clearBadge"), t("audit.baseline.clearSummary")],
+    review: [t("audit.baseline.reviewTitle"), t("audit.baseline.reviewBadge"), t("audit.baseline.reviewSummary")],
+    block: [t("audit.baseline.blockTitle"), t("audit.baseline.blockBadge"), t("audit.baseline.blockSummary")]
+  }[verdict] || [t("audit.failed"), t("common.error"), t("error.generic")];
 }
 
 function bundleEvidenceDetails(label, value) {
@@ -1129,21 +1133,40 @@ function bundleEvidenceDetails(label, value) {
 
 function importClassificationPresentation(classification) {
   return {
-    new: ["新 Skill", "is-new"],
-    identical: ["完全相同 · 自动跳过", "is-identical"],
-    userConflict: ["个人版本冲突", "is-user-conflict"],
-    managedConflict: ["受管版本冲突", "is-managed-conflict"],
-    incompatible: ["不兼容", "is-incompatible"]
+    new: [t("bundle.classification.new"), "is-new"],
+    identical: [t("bundle.classification.identical"), "is-identical"],
+    userConflict: [t("bundle.classification.userConflict"), "is-user-conflict"],
+    managedConflict: [t("bundle.classification.managedConflict"), "is-managed-conflict"],
+    incompatible: [t("bundle.classification.incompatible"), "is-incompatible"]
   }[classification] || [classification, "is-incompatible"];
 }
 
+function bundleDecisionSummary(decision) {
+  if (localization.locale === "zh-CN" && decision?.summary) return decision.summary;
+  const key = decision?.baselineBlocked
+    ? decision.classification === "userConflict"
+      ? "bundle.decision.userBlocked"
+      : "bundle.decision.newBlocked"
+    : `bundle.decision.${decision?.classification}`;
+  const summary = t(key);
+  return summary === key ? t("bundle.unknownDecision") : summary;
+}
+
+function bundleOfferSummary(offer) {
+  if (!offer) return "";
+  const key = offer.kind === "replacePersonal"
+    ? "bundle.offer.replace"
+    : offer.kind === "createKeepingDormant"
+      ? "bundle.offer.createDormant"
+      : "bundle.offer.create";
+  const summary = t(key);
+  return summary === key ? offer.summary : summary;
+}
+
 function fileDeltaLabel(status) {
-  return {
-    unchanged: "相同",
-    modified: "已修改",
-    importedOnly: "仅导入版本",
-    currentOnly: "仅当前版本"
-  }[status] || status;
+  const key = `bundle.delta.${status}`;
+  const label = t(key);
+  return label === key ? status : label;
 }
 
 function renderCatalogMatches(decision) {
@@ -1152,23 +1175,23 @@ function renderCatalogMatches(decision) {
   if (!decision?.matches?.length) return container;
   const heading = document.createElement("div");
   heading.className = "bundle-import-subheading";
-  heading.textContent = `同名版本 · ${decision.matches.length}`;
+  heading.textContent = t("bundle.sameNameHeading", { count: decision.matches.length });
   container.append(heading);
   for (const match of decision.matches) {
     const details = document.createElement("details");
     details.className = "bundle-import-match";
     const summary = document.createElement("summary");
     const label = document.createElement("strong");
-    label.textContent = `${sourceLabels[match.source] || match.source} · ${skillStateLabels[match.state] || match.state}`;
+    label.textContent = `${sourceLabel(match.source)} · ${skillStateLabel(match.state)}`;
     const relation = document.createElement("span");
-    relation.textContent = match.identical ? "完整 revision 相同" : "存在差异";
+    relation.textContent = match.identical ? t("bundle.sameRevision") : t("bundle.different");
     summary.append(label, relation);
     const path = document.createElement("code");
     path.textContent = match.path;
     const revision = document.createElement("code");
     revision.textContent = match.revision
-      ? `Skill 版本校验值 ${match.revision}`
-      : "该目录无法计算可迁移版本校验值";
+      ? t("bundle.revision", { revision: match.revision })
+      : t("bundle.revisionUnavailable");
     const deltas = document.createElement("div");
     deltas.className = "bundle-import-deltas";
     for (const delta of match.fileDeltas) {
@@ -1204,10 +1227,10 @@ function renderInstallOffer(decision) {
   const copy = document.createElement("span");
   const title = document.createElement("strong");
   title.textContent = decision.installOffer.kind === "replacePersonal"
-    ? "使用导入版本替换当前个人 Skill"
-    : "安装这个导入版本";
+    ? t("bundle.replacePersonal")
+    : t("bundle.installVersion");
   const summary = document.createElement("small");
-  summary.textContent = decision.installOffer.summary;
+    summary.textContent = bundleOfferSummary(decision.installOffer);
   const destination = document.createElement("code");
   destination.textContent = decision.installOffer.destination;
   copy.append(title, summary, destination);
@@ -1232,25 +1255,29 @@ function updateBundleInstallSelection() {
     || state.bundleInstallReviewStale
     || selected === 0;
   elements.installBundleSkills.querySelector("span").textContent = selected
-    ? `复核安装 ${selected} 项`
-    : "复核安装";
+    ? t("bundle.selectionReview", { count: selected })
+    : t("bundle.selectionReviewEmpty");
 }
 
 function renderBundleImportReview(review) {
   setImportReview(state.bundleWorkflow, review);
   state.bundleInstallReviewStale = false;
-  elements.bundleImportTitle.textContent = "已验证，尚未安装";
-  elements.bundleImportPhase.textContent = "暂存";
-  elements.bundleImportMutationState.innerHTML = '<i data-lucide="shield-check"></i>未安装';
+  elements.bundleImportTitle.textContent = t("bundle.importVerified");
+  elements.bundleImportPhase.textContent = t("bundle.staged");
+  elements.bundleImportMutationState.innerHTML = '<i data-lucide="shield-check"></i><span></span>';
+  elements.bundleImportMutationState.querySelector("span").textContent = t("bundle.notInstalled");
   elements.bundleInstallResults.hidden = true;
   elements.bundleInstallResults.replaceChildren();
   const decisions = new Map(review.decisions.map((decision) => [decision.directoryName, decision]));
   elements.bundleImportSkillCount.textContent = String(review.skills.length);
   elements.bundleImportSource.replaceChildren(
-    candidateSourceRow("来源文件", review.sourceFileName),
-    candidateSourceRow("来源文件校验值", review.sourceRevision),
-    candidateSourceRow("Bundle 校验值", review.bundleRevision),
-    candidateSourceRow("文件数量", `${review.totalFiles} 个 · ${formatBytes(review.totalBytes)}`)
+    candidateSourceRow(t("bundle.sourceFile"), review.sourceFileName),
+    candidateSourceRow(t("bundle.sourceFileRevision"), review.sourceRevision),
+    candidateSourceRow(t("bundle.bundleRevision"), review.bundleRevision),
+    candidateSourceRow(t("detail.fileCount"), t("bundle.fileCountWithBytes", {
+      count: review.totalFiles,
+      bytes: formatBytes(review.totalBytes)
+    }))
   );
   const sections = review.skills.map((skill) => {
     const decision = decisions.get(skill.directoryName);
@@ -1270,7 +1297,7 @@ function renderBundleImportReview(review) {
     const [auditTitle, auditLabel, auditSummaryText] = importAuditPresentation(skill.audit.verdict);
     const auditStatus = document.createElement("span");
     auditStatus.className = `verdict-badge is-${skill.audit.verdict}`;
-    auditStatus.textContent = `审查：${auditLabel}`;
+    auditStatus.textContent = t("bundle.auditPrefix", { label: auditLabel });
     const [classificationLabel, classificationClass] = importClassificationPresentation(
       decision?.classification || "incompatible"
     );
@@ -1280,7 +1307,7 @@ function renderBundleImportReview(review) {
     titleGroup.append(title, classification);
     statusGroup.append(status, auditStatus);
     header.append(titleGroup, statusGroup);
-    const skillRevision = bundleEvidenceDetails("查看 Skill 版本校验值", skill.revision);
+    const skillRevision = bundleEvidenceDetails(t("bundle.viewRevision"), skill.revision);
     const files = document.createElement("div");
     files.className = "bundle-import-file-list";
     for (const file of skill.files) {
@@ -1292,11 +1319,11 @@ function renderBundleImportReview(review) {
       const path = document.createElement("code");
       path.textContent = file.path;
       const meta = document.createElement("small");
-      meta.textContent = `${formatBytes(file.size)}${file.executableAfterInstall ? " · 安装后可执行" : ""}`;
+      meta.textContent = `${formatBytes(file.size)}${file.executableAfterInstall ? ` · ${t("bundle.executableAfterInstall")}` : ""}`;
       button.append(path, meta);
       const entry = document.createElement("div");
       entry.className = "bundle-import-file-entry";
-      entry.append(button, bundleEvidenceDetails("查看 SHA-256", file.sha256));
+      entry.append(button, bundleEvidenceDetails(t("bundle.viewSha"), file.sha256));
       files.append(entry);
     }
     const checks = document.createElement("div");
@@ -1305,9 +1332,9 @@ function renderBundleImportReview(review) {
       const row = document.createElement("div");
       row.className = `bundle-import-check is-${check.status}`;
       const label = document.createElement("strong");
-      label.textContent = check.label;
+      label.textContent = compatibilityCheckLabel(check);
       const detail = document.createElement("small");
-      detail.textContent = check.detail;
+      detail.textContent = compatibilityCheckDetail(check);
       row.append(label, detail);
       checks.append(row);
     }
@@ -1316,7 +1343,7 @@ function renderBundleImportReview(review) {
     findings.replaceChildren(...skill.audit.findings.map(renderFinding));
     const compatibilityHeading = document.createElement("div");
     compatibilityHeading.className = "bundle-import-subheading";
-    compatibilityHeading.textContent = "Codex 兼容性";
+    compatibilityHeading.textContent = t("bundle.compatibilityHeading");
     const auditHeading = document.createElement("div");
     auditHeading.className = "bundle-import-audit-heading";
     const auditTitleElement = document.createElement("strong");
@@ -1326,10 +1353,10 @@ function renderBundleImportReview(review) {
     auditHeading.append(auditTitleElement, auditSummary);
     const filesHeading = document.createElement("div");
     filesHeading.className = "bundle-import-subheading";
-    filesHeading.textContent = "已验证文件";
+    filesHeading.textContent = t("bundle.verifiedFiles");
     const decisionSummary = document.createElement("p");
     decisionSummary.className = "bundle-import-decision-summary";
-    decisionSummary.textContent = decision?.summary || "未能判断这个 Skill 与当前目录的关系。";
+    decisionSummary.textContent = bundleDecisionSummary(decision);
     const matches = renderCatalogMatches(decision);
     const offer = renderInstallOffer(decision);
     section.append(
@@ -1348,10 +1375,10 @@ function renderBundleImportReview(review) {
     return section;
   });
   elements.bundleImportSkillList.replaceChildren(...sections);
-  elements.bundleImportStatus.textContent = "内容已验证并暂存到应用缓存，尚未安装。";
-  elements.bundleImportPreviewTitle.textContent = "文件预览";
+  elements.bundleImportStatus.textContent = t("bundle.stagedNotInstalled");
+  elements.bundleImportPreviewTitle.textContent = t("candidate.filePreview");
   elements.bundleImportPreviewEmpty.hidden = false;
-  elements.bundleImportPreviewEmpty.textContent = "选择一个文件以查看已验证暂存内容。";
+  elements.bundleImportPreviewEmpty.textContent = t("bundle.previewPrompt");
   elements.bundleImportFilePreview.hidden = true;
   elements.bundleImportCurrentFilePreview.hidden = true;
   updateBundleInstallSelection();
@@ -1370,12 +1397,6 @@ function markBundleInstallReviewStale(message) {
 }
 
 function renderBundleInstallOutcomes(result) {
-  const labels = {
-    installed: "已安装",
-    replaced: "已替换",
-    skippedIdentical: "已跳过相同版本",
-    failed: "失败"
-  };
   const rows = result.outcomes.map((outcome) => {
     const row = document.createElement("div");
     row.className = `bundle-install-result is-${outcome.status}`;
@@ -1383,18 +1404,21 @@ function renderBundleInstallOutcomes(result) {
     const name = document.createElement("strong");
     name.textContent = outcome.directoryName;
     const status = document.createElement("span");
-    status.textContent = labels[outcome.status] || outcome.status;
+    const statusKey = `bundle.status.${outcome.status}`;
+    const statusLabel = t(statusKey);
+    status.textContent = statusLabel === statusKey ? outcome.status : statusLabel;
     const message = document.createElement("small");
-    message.textContent = outcome.message;
+    message.textContent = localization.locale === "zh-CN" ? outcome.message : status.textContent;
     heading.append(name, status);
     row.append(heading, message);
     return row;
   });
   elements.bundleInstallResults.replaceChildren(...rows);
   elements.bundleInstallResults.hidden = rows.length === 0;
-  elements.bundleImportTitle.textContent = "安装结果";
-  elements.bundleImportPhase.textContent = "回执";
-  elements.bundleImportMutationState.innerHTML = '<i data-lucide="list-checks"></i>已处理';
+  elements.bundleImportTitle.textContent = t("bundle.installResult");
+  elements.bundleImportPhase.textContent = t("bundle.receipt");
+  elements.bundleImportMutationState.innerHTML = '<i data-lucide="list-checks"></i><span></span>';
+  elements.bundleImportMutationState.querySelector("span").textContent = t("bundle.processed");
   refreshIcons();
 }
 
@@ -1402,11 +1426,12 @@ async function openBundleImport() {
   try {
     const selected = await openDialog({
       multiple: false,
-      title: "选择 Skill Bundle",
+      title: t("bundle.chooseImport"),
       filters: [{ name: "Skill Bundle", extensions: ["skillbundle"] }]
     });
     if (typeof selected !== "string") return;
     elements.importBundleButton.disabled = true;
+    state.bundleInstallResult = null;
     const review = await desktop.stageSkillBundle(selected);
     renderBundleImportReview(review);
     elements.bundleImportDialog.showModal();
@@ -1423,7 +1448,7 @@ async function previewImportedBundleFile(directoryName, path) {
   const operation = beginImportPreview(state.bundleWorkflow);
   if (!operation) return;
   elements.bundleImportPreviewTitle.textContent = path;
-  elements.bundleImportPreviewEmpty.textContent = "正在读取已验证暂存内容。";
+  elements.bundleImportPreviewEmpty.textContent = t("bundle.previewLoading");
   elements.bundleImportPreviewEmpty.hidden = false;
   elements.bundleImportFilePreview.hidden = true;
   elements.bundleImportCurrentFilePreview.hidden = true;
@@ -1437,7 +1462,7 @@ async function previewImportedBundleFile(directoryName, path) {
     if (!isCurrentImportPreview(state.bundleWorkflow, operation)
       || !elements.bundleImportDialog.open) return;
     if (!result.isText) {
-      elements.bundleImportPreviewEmpty.textContent = "该文件不是 UTF-8 文本，完整哈希仍已验证。";
+      elements.bundleImportPreviewEmpty.textContent = t("bundle.previewBinary");
       return;
     }
     elements.bundleImportPreviewEmpty.hidden = true;
@@ -1445,7 +1470,9 @@ async function previewImportedBundleFile(directoryName, path) {
     elements.bundleImportFilePreview.textContent = result.content || "";
     if (result.truncated) {
       elements.bundleImportPreviewEmpty.hidden = false;
-      elements.bundleImportPreviewEmpty.textContent = `仅显示前 ${formatBytes(result.previewBytes)}；完整文件哈希仍已验证。`;
+      elements.bundleImportPreviewEmpty.textContent = t("bundle.installPreviewTruncated", {
+        bytes: formatBytes(result.previewBytes)
+      });
     }
   } catch (error) {
     if (isCurrentImportPreview(state.bundleWorkflow, operation)
@@ -1456,10 +1483,12 @@ async function previewImportedBundleFile(directoryName, path) {
 }
 
 function comparisonSideText(label, side) {
-  if (!side.exists) return `${label}\n\n该版本中没有此文件。`;
-  const metadata = `${formatBytes(side.size)} · SHA-256 ${side.sha256}${side.executable ? " · 可执行" : ""}`;
-  if (!side.isText) return `${label}\n${metadata}\n\n该文件不是 UTF-8 文本。`;
-  const truncated = side.truncated ? `\n\n仅显示前 ${formatBytes(side.previewBytes)}。` : "";
+  if (!side.exists) return `${label}\n\n${t("bundle.fileComparisonMissing")}`;
+  const metadata = `${formatBytes(side.size)} · SHA-256 ${side.sha256}${side.executable ? ` · ${t("common.executable")}` : ""}`;
+  if (!side.isText) return `${label}\n${metadata}\n\n${t("bundle.fileComparisonNonText")}`;
+  const truncated = side.truncated
+    ? `\n\n${t("bundle.fileComparisonTruncated", { bytes: formatBytes(side.previewBytes) })}`
+    : "";
   return `${label}\n${metadata}\n\n${side.content || ""}${truncated}`;
 }
 
@@ -1467,9 +1496,9 @@ async function compareImportedBundleFile(directoryName, matchId, path) {
   if (state.bundleInstallReviewStale) return;
   const operation = beginImportPreview(state.bundleWorkflow);
   if (!operation) return;
-  elements.bundleImportPreviewTitle.textContent = `版本比较 · ${path}`;
+  elements.bundleImportPreviewTitle.textContent = t("bundle.compareTitle", { path });
   elements.bundleImportPreviewEmpty.hidden = false;
-  elements.bundleImportPreviewEmpty.textContent = "正在重新核对双方 revision 与文件内容。";
+  elements.bundleImportPreviewEmpty.textContent = t("bundle.compareLoading");
   elements.bundleImportFilePreview.hidden = true;
   elements.bundleImportCurrentFilePreview.hidden = true;
   try {
@@ -1485,8 +1514,8 @@ async function compareImportedBundleFile(directoryName, matchId, path) {
     elements.bundleImportPreviewEmpty.hidden = true;
     elements.bundleImportFilePreview.hidden = false;
     elements.bundleImportCurrentFilePreview.hidden = false;
-    elements.bundleImportFilePreview.textContent = comparisonSideText("导入版本", result.imported);
-    elements.bundleImportCurrentFilePreview.textContent = comparisonSideText("当前版本", result.current);
+    elements.bundleImportFilePreview.textContent = comparisonSideText(t("bundle.importedVersion"), result.imported);
+    elements.bundleImportCurrentFilePreview.textContent = comparisonSideText(t("bundle.currentVersion"), result.current);
   } catch (error) {
     if (isCurrentImportPreview(state.bundleWorkflow, operation)
       && elements.bundleImportDialog.open) {
@@ -1507,17 +1536,34 @@ function requestBundleInstall() {
   );
   const lines = selectedDecisions.map((decision) => {
     const action = decision.installOffer?.kind === "replacePersonal"
-      ? "替换当前启用的个人 Skill"
-      : "安装为启用的个人 Skill";
+      ? t("bundle.installCurrent")
+      : t("bundle.installEnabled");
     return `${decision.directoryName}：${action}`;
   });
+  const recovery = replacements.length ? t("bundle.recoveryNotice") : "";
   presentConfirmation({
-    title: "安装所选 Skill 版本",
-    message: `${lines.join("\n")}\n\n安装前会重新验证 Bundle、全部同名版本和目标目录。${replacements.length ? " 被替换的个人 Skill 会先保留恢复副本。" : ""}`,
-    label: `确认安装 ${selections.length} 项`,
+    title: t("bundle.installConfirmTitle"),
+    message: `${lines.join("\n")}\n\n${t("bundle.installConfirmMessage", { recovery })}`,
+    label: t("bundle.selectionReview", { count: selections.length }),
     tone: replacements.length ? "danger" : "primary",
     action: () => performBundleInstall(review, selections)
   });
+}
+
+function bundleInstallStatusText(result) {
+  const installed = result.outcomes.filter((outcome) => ["installed", "replaced"].includes(outcome.status)).length;
+  const skipped = result.outcomes.filter((outcome) => outcome.status === "skippedIdentical").length;
+  const failed = result.outcomes.filter((outcome) => outcome.status === "failed").length;
+  const restart = installed && result.restartRecommended ? t("bundle.restartSuffix") : "";
+  return {
+    failed,
+    text: t("bundle.installStatus", {
+      installed,
+      skipped: skipped ? t("bundle.skippedSuffix", { count: skipped }) : "",
+      failed: failed ? t("bundle.failedSuffix", { count: failed }) : "",
+      restart
+    })
+  };
 }
 
 async function performBundleInstall(review, selections) {
@@ -1532,15 +1578,12 @@ async function performBundleInstall(review, selections) {
       review.reviewRevision,
       selections
     );
+    state.bundleInstallResult = result;
     for (const outcome of result.outcomes) {
       if (!outcome.skill) continue;
       applyCatalogState(applyInstallOutcome(state.skills, state.counts, outcome));
     }
-    const installed = result.outcomes.filter((outcome) => ["installed", "replaced"].includes(outcome.status)).length;
-    const skipped = result.outcomes.filter((outcome) => outcome.status === "skippedIdentical").length;
-    const failed = result.outcomes.filter((outcome) => outcome.status === "failed").length;
-    const restart = installed && result.restartRecommended ? " · 请重启 Codex 以加载变更" : "";
-    const statusText = `安装结果：完成 ${installed} 项${skipped ? ` · 跳过相同 ${skipped} 项` : ""}${failed ? ` · 失败 ${failed} 项` : ""}${restart}。`;
+    const { failed, text: statusText } = bundleInstallStatusText(result);
     renderBundleInstallOutcomes(result);
     elements.bundleImportStatus.textContent = statusText;
     if (result.catalogRefreshNeeded) {
@@ -1552,17 +1595,19 @@ async function performBundleInstall(review, selections) {
       renderBundleInstallOutcomes(result);
       elements.bundleImportStatus.textContent = statusText;
     } catch (refreshError) {
-      markBundleInstallReviewStale("安装回执已保留，但 Catalog 重新检查失败。重新导入后才能继续比较或安装。");
-      showToast(`安装回执已保留；重新检查 Catalog 失败：${bundleImportErrorMessage(refreshError)}`, true);
+      markBundleInstallReviewStale(t("bundle.receiptRetained"));
+      showToast(t("bundle.receiptRefreshFailed", {
+        message: bundleImportErrorMessage(refreshError)
+      }), true);
     }
-    showToast(failed ? "部分 Skill 未能安装，请查看逐项回执。" : "所选 Skill 版本已处理完成。", failed);
+    showToast(failed ? t("bundle.partialFailure") : t("bundle.allProcessed"), failed);
   } catch (error) {
     if (["BUNDLE_INSTALL_REVIEW_STALE", "BUNDLE_INSTALL_MATCH_UNKNOWN"].includes(error?.code)) {
       try {
         const refreshed = await desktop.reviewImportedBundle(review.sessionId, review.bundleRevision);
         renderBundleImportReview(refreshed);
       } catch {
-        markBundleInstallReviewStale("同名版本已变化且重新检查失败。重新导入后才能继续比较或安装。");
+        markBundleInstallReviewStale(t("bundle.staleRefreshFailed"));
       }
     }
     throw new Error(bundleImportErrorMessage(error));
@@ -1602,6 +1647,21 @@ function candidateSourceRow(label, value) {
   return row;
 }
 
+function compatibilityCheckLabel(check) {
+  const key = `compat.${check.id}.label`;
+  const label = t(key);
+  return label === key ? check.label : label;
+}
+
+function compatibilityCheckDetail(check) {
+  const key = `compat.${check.id}.${check.status}`;
+  const fallbackKey = `compat.${check.id}.detail`;
+  const detail = t(key);
+  if (detail !== key) return detail;
+  const fallback = t(fallbackKey);
+  return fallback === fallbackKey ? check.detail : fallback;
+}
+
 function renderCandidateSource(manifest) {
   const source = manifest.source;
   const requestedRef = source.requestedRef || source.requested_ref;
@@ -1610,30 +1670,32 @@ function renderCandidateSource(manifest) {
   const selectedPath = source.selectedPath || source.selected_path;
   const rows = source.kind === "github"
     ? [
-      candidateSourceRow("来源", "GitHub 公开仓库"),
-      candidateSourceRow("仓库", source.repository),
-      candidateSourceRow("请求分支", requestedRef),
-      candidateSourceRow("固定提交", resolvedSha),
-      candidateSourceRow("Skill 路径", skillPath || "仓库根目录"),
-      candidateSourceRow("候选哈希", manifest.candidateHash)
+      candidateSourceRow(t("candidate.source"), t("candidate.githubPublic")),
+      candidateSourceRow(t("candidate.repository"), source.repository),
+      candidateSourceRow(t("candidate.requestedRef"), requestedRef),
+      candidateSourceRow(t("candidate.resolvedCommit"), resolvedSha),
+      candidateSourceRow(t("candidate.skillPath"), skillPath || t("candidate.repositoryRoot")),
+      candidateSourceRow(t("candidate.hash"), manifest.candidateHash)
     ]
     : [
-      candidateSourceRow("来源", "本地文件夹"),
-      candidateSourceRow("选择位置", selectedPath),
-      candidateSourceRow("候选哈希", manifest.candidateHash)
+      candidateSourceRow(t("candidate.source"), t("candidate.localSource")),
+      candidateSourceRow(t("candidate.selectedPath"), selectedPath),
+      candidateSourceRow(t("candidate.hash"), manifest.candidateHash)
     ];
   elements.candidateSourceList.replaceChildren(...rows);
 }
 
 function renderCandidateCompatibility(compatibility) {
   const labels = {
-    compatible: "基础兼容",
-    review: "需复核",
-    incompatible: "不兼容"
+    compatible: t("candidate.compatible"),
+    review: t("candidate.needsReview"),
+    incompatible: t("candidate.incompatible")
   };
   elements.candidateCompatibilityStatus.textContent = labels[compatibility.status] || compatibility.status;
   elements.candidateCompatibilityStatus.className = `candidate-status is-${compatibility.status}`;
-  elements.candidateCompatibilitySummary.textContent = compatibility.summary;
+  elements.candidateCompatibilitySummary.textContent = localization.locale === "zh-CN"
+    ? compatibility.summary
+    : labels[compatibility.status];
   const rows = compatibility.checks.map((check) => {
     const row = document.createElement("div");
     row.className = `candidate-compatibility-row is-${check.status}`;
@@ -1645,9 +1707,9 @@ function renderCandidateCompatibility(compatibility) {
         : "circle-x";
     const copy = document.createElement("div");
     const label = document.createElement("strong");
-    label.textContent = check.label;
+    label.textContent = compatibilityCheckLabel(check);
     const detail = document.createElement("p");
-    detail.textContent = check.detail;
+    detail.textContent = compatibilityCheckDetail(check);
     copy.append(label, detail);
     row.append(marker, copy);
     return row;
@@ -1669,7 +1731,7 @@ function renderCandidateFiles() {
     const path = document.createElement("strong");
     path.textContent = file.path;
     const meta = document.createElement("small");
-    meta.textContent = `${formatBytes(file.size)} · SHA-256 ${file.sha256.slice(0, 12)}…${file.executable ? " · 可执行" : ""}`;
+    meta.textContent = `${formatBytes(file.size)} · SHA-256 ${file.sha256.slice(0, 12)}…${file.executable ? ` · ${t("common.executable")}` : ""}`;
     copy.append(path, meta);
     row.append(icon, copy);
     row.addEventListener("click", () => selectCandidateFile(file.path));
@@ -1682,7 +1744,7 @@ function renderCandidatePreview() {
   const candidate = state.candidate;
   const preview = candidate?.preview;
   if (!candidate?.selectedPath) {
-    elements.candidatePreviewTitle.textContent = "文件预览";
+    elements.candidatePreviewTitle.textContent = t("candidate.filePreview");
     elements.candidatePreviewMeta.textContent = "";
     elements.candidatePreviewEmpty.hidden = false;
     elements.candidateFilePreview.hidden = true;
@@ -1692,13 +1754,13 @@ function renderCandidatePreview() {
   elements.candidatePreviewTitle.textContent = candidate.selectedPath;
   elements.candidatePreviewMeta.textContent = file ? `SHA-256 ${file.sha256.slice(0, 12)}…` : "";
   if (preview?.loading) {
-    elements.candidatePreviewEmpty.textContent = "正在读取暂存内容。";
+    elements.candidatePreviewEmpty.textContent = t("candidate.previewLoading");
     elements.candidatePreviewEmpty.hidden = false;
     elements.candidateFilePreview.hidden = true;
     return;
   }
   if (!preview?.isText) {
-    elements.candidatePreviewEmpty.textContent = "该文件不是 UTF-8 文本，无法在此预览。文件哈希仍已列入上方清单。";
+    elements.candidatePreviewEmpty.textContent = t("candidate.previewBinary");
     elements.candidatePreviewEmpty.hidden = false;
     elements.candidateFilePreview.hidden = true;
     return;
@@ -1710,9 +1772,9 @@ function renderCandidatePreview() {
 
 function renderCandidateAudit(audit) {
   const verdicts = {
-    clear: ["基础检查未发现已知阻断模式", "可继续", "内置规则未命中问题，不代表候选已通过完整安全审计。"],
-    review: ["需要人工复核", "需复核", "请阅读下方证据，并确认这些行为符合预期。"],
-    block: ["建议阻止", "已阻止", "候选包含结构错误或高影响操作，安装前不应继续。"]
+    clear: [t("audit.baseline.clearTitle"), t("audit.baseline.clearBadge"), t("audit.baseline.clearSummary")],
+    review: [t("audit.baseline.reviewTitle"), t("audit.baseline.reviewBadge"), t("audit.baseline.reviewSummary")],
+    block: [t("audit.baseline.blockTitle"), t("audit.baseline.blockBadge"), t("audit.baseline.blockSummary")]
   };
   const [title, badge, summary] = verdicts[audit.verdict] || verdicts.review;
   elements.candidateAuditVerdict.textContent = title;
@@ -1727,10 +1789,10 @@ function renderCandidateSkipped(entries) {
   elements.candidateSkippedCount.textContent = String(entries.length);
   elements.candidateSkippedList.replaceChildren();
   if (entries.length === 0) {
-    elements.candidateSkippedSummary.textContent = "所有暂存文件都在左侧清单中。不支持的条目会直接中止审查，不会被静默忽略。";
+    elements.candidateSkippedSummary.textContent = t("candidate.allIncluded");
     return;
   }
-  elements.candidateSkippedSummary.textContent = "以下条目未被纳入候选内容：";
+  elements.candidateSkippedSummary.textContent = t("candidate.excludedIntro");
   const rows = entries.map((entry) => {
     const row = document.createElement("p");
     row.textContent = `${entry.path} · ${entry.reason}`;
@@ -1743,7 +1805,7 @@ function renderCandidateReview() {
   const candidate = state.candidate;
   if (!candidate) return;
   const { review } = candidate;
-  const name = review.audit.document.name || "候选 Skill";
+  const name = review.audit.document.name || t("candidate.defaultName");
   elements.candidateReviewTitle.textContent = name;
   renderCandidateSource(review.manifest);
   renderCandidateCompatibility(review.compatibility);
@@ -1756,8 +1818,8 @@ function renderCandidateReview() {
   const blocked = review.compatibility.status === "incompatible" || review.audit.verdict === "block";
   elements.installCandidate.disabled = blocked;
   elements.installCandidate.title = blocked
-    ? "先解决不兼容结构或阻断问题"
-    : "复核安装位置并确认安装";
+    ? t("candidate.installBlockedTitle")
+    : t("candidate.installReadyTitle");
   refreshIcons();
 }
 
@@ -1767,8 +1829,8 @@ function candidateVersionLabel(manifest) {
       || manifest.source.resolvedSHA
       || manifest.source.resolved_sha;
     const version = resolvedSha
-      ? `提交 ${resolvedSha.slice(0, 12)}`
-      : `候选 ${manifest.candidateHash.slice(0, 12)}`;
+      ? t("candidate.versionCommit", { value: resolvedSha.slice(0, 12) })
+      : t("candidate.versionHash", { value: manifest.candidateHash.slice(0, 12) });
     return `${manifest.source.repository} · ${version}`;
   }
   return manifest.source.selectedPath || manifest.source.selected_path;
@@ -1777,7 +1839,7 @@ function candidateVersionLabel(manifest) {
 async function performCandidateInstall(candidate, preview) {
   const { manifest } = candidate.review;
   elements.installCandidate.disabled = true;
-  elements.installCandidate.querySelector("span").textContent = "正在安装";
+  elements.installCandidate.querySelector("span").textContent = t("candidate.installing");
   try {
     const result = await desktop.installStagedCandidate(
       manifest.sessionId,
@@ -1797,17 +1859,17 @@ async function performCandidateInstall(candidate, preview) {
       applyCatalogState(addCatalogSkill(state.skills, state.counts, result.skill));
       elements.detailPanel.classList.add("is-open");
       renderDetail();
-      showToast("Skill 已安装。请在新任务中使用最新版本。");
+      showToast(t("candidate.installed"));
     } else {
       await loadSkills({ preserveSelection: false, forceRefresh: true });
       const installed = state.skills.find((skill) => skill.source === "personal" && skill.name === preview.name);
       if (installed) await selectSkill(installed.id);
-      showToast("Skill 已安装；目录索引已重新读取。请在新任务中使用最新版本。");
+      showToast(t("candidate.installedReindexed"));
     }
   } finally {
     if (state.candidate === candidate) {
       elements.installCandidate.disabled = false;
-      elements.installCandidate.querySelector("span").textContent = "安装 Skill";
+      elements.installCandidate.querySelector("span").textContent = t("candidate.install");
     }
   }
 }
@@ -1818,7 +1880,7 @@ async function requestCandidateInstall() {
   const { review } = candidate;
   if (review.compatibility.status === "incompatible" || review.audit.verdict === "block") return;
   elements.installCandidate.disabled = true;
-  elements.installCandidate.querySelector("span").textContent = "正在检查";
+  elements.installCandidate.querySelector("span").textContent = t("candidate.checkingInstall");
   try {
     const preview = await desktop.previewStagedCandidateInstall(
       review.manifest.sessionId,
@@ -1828,35 +1890,43 @@ async function requestCandidateInstall() {
     if (!preview.canInstall) {
       const conflictPath = preview.conflict?.path;
       showToast(
-        conflictPath ? `目标位置已有同名 Skill：${conflictPath}` : "该候选当前不能安装，请复核阻断项。",
+        conflictPath
+          ? t("candidate.installConflict", { path: conflictPath })
+          : t("candidate.cannotInstall"),
         true
       );
       return;
     }
-    const auditState = preview.auditVerdict === "review" ? "基础检查有需人工复核项" : "基础检查无已知阻断项";
+    const auditState = preview.auditVerdict === "review"
+      ? t("candidate.auditReview")
+      : t("candidate.auditClear");
     const deepAuditState = candidate.deepAudit
-      ? `云端深度审查：${{ clear: "未保留语义风险项", review: "有需人工复核项", block: "有高影响风险项" }[candidate.deepAudit.verdict] || candidate.deepAudit.verdict}`
-      : "云端深度审查：未运行（不影响基础安装门槛）";
+      ? t("candidate.deepState", { state: {
+        clear: t("candidate.deepClear"),
+        review: t("candidate.deepReview"),
+        block: t("candidate.deepBlock")
+      }[candidate.deepAudit.verdict] || candidate.deepAudit.verdict })
+      : t("candidate.deepNotRun");
     presentConfirmation({
-      title: `安装 ${preview.name}`,
+      title: t("candidate.installTitle", { name: preview.name }),
       message: [
-        `来源版本：${candidateVersionLabel(review.manifest)}`,
-        `安装位置：${preview.destination}`,
-        `文件：${preview.fileCount} 个（安装前将再次核对完整清单与哈希）`,
-        `审查状态：${auditState}`,
+        t("candidate.installSource", { value: candidateVersionLabel(review.manifest) }),
+        t("candidate.installDestination", { value: preview.destination }),
+        t("candidate.installFiles", { count: preview.fileCount }),
+        t("candidate.installAudit", { value: auditState }),
         deepAuditState,
-        "安装不会执行候选中的脚本，也不会覆盖同名 Skill。"
+        t("candidate.installGuarantee")
       ].join("\n"),
-      label: "确认安装",
+      label: t("candidate.confirmInstall"),
       action: () => performCandidateInstall(candidate, preview),
       tone: "primary"
     });
   } catch (error) {
-    showToast(error.message, true);
+    showToast(localizedError(error), true);
   } finally {
     if (state.candidate === candidate) {
       elements.installCandidate.disabled = false;
-      elements.installCandidate.querySelector("span").textContent = "安装 Skill";
+      elements.installCandidate.querySelector("span").textContent = t("candidate.install");
     }
   }
 }
@@ -1869,7 +1939,7 @@ async function requestCandidateDeepAudit() {
     const settings = await desktop.getDeepAuditSettings();
     state.deepAuditSettings = settings;
     if (!settings.hasApiKey || !settings.endpoint || !settings.model) {
-      showToast("尚未配置深度审查模型。请先在“设置”中填写 API 模式、Base URL、模型和 API key。", true);
+      showToast(t("deep.notConfigured"), true);
       return;
     }
     const { manifest } = candidate.review;
@@ -1879,7 +1949,7 @@ async function requestCandidateDeepAudit() {
     );
     if (state.candidate !== candidate) return;
     if (preview.sourceRevision !== manifest.candidateHash) {
-      throw new Error("候选内容已变化，请关闭后重新暂存并审查。");
+      throw new Error(t("candidate.changed"));
     }
     state.deepAuditContext = { kind: "candidate", candidate };
     state.deepAuditPreview = preview;
@@ -1887,7 +1957,7 @@ async function requestCandidateDeepAudit() {
     elements.deepConsentDialog.showModal();
     refreshIcons();
   } catch (error) {
-    showToast(error.message, true);
+    showToast(localizedError(error), true);
   } finally {
     elements.candidateDeepAudit.disabled = false;
   }
@@ -1915,7 +1985,7 @@ async function selectCandidateFile(path) {
     if (state.candidate !== candidate || candidate.previewSequence !== sequence) return;
     candidate.preview = null;
     renderCandidatePreview();
-    showToast(error.message, true);
+    showToast(localizedError(error), true);
   }
 }
 
@@ -1924,12 +1994,12 @@ async function stageCandidate(event) {
   const github = state.candidateSourceMode === "github";
   const source = github ? elements.candidateGithubUrl.value.trim() : state.candidateLocalPath;
   if (!source) {
-    showToast(github ? "请输入公开 GitHub 地址。" : "请选择包含 SKILL.md 的文件夹。", true);
+    showToast(github ? t("candidate.enterGithub") : t("candidate.selectFolder"), true);
     return;
   }
   let manifest = null;
   elements.stageCandidate.disabled = true;
-  elements.stageCandidate.querySelector("span").textContent = "正在暂存";
+  elements.stageCandidate.querySelector("span").textContent = t("candidate.staging");
   try {
     manifest = github
       ? await desktop.stageGithubCandidate(source)
@@ -1953,10 +2023,10 @@ async function stageCandidate(event) {
         // The app clears unused staging sessions on its next launch.
       }
     }
-    showToast(error.message, true);
+    showToast(localizedError(error), true);
   } finally {
     elements.stageCandidate.disabled = false;
-    elements.stageCandidate.querySelector("span").textContent = "暂存并审查";
+    elements.stageCandidate.querySelector("span").textContent = t("candidate.stageReview");
   }
 }
 
@@ -1968,7 +2038,7 @@ async function closeCandidateReview() {
   try {
     await desktop.discardStagedCandidate(candidate.review.manifest.sessionId);
   } catch (error) {
-    showToast(error.message, true);
+    showToast(localizedError(error), true);
   }
 }
 
@@ -1979,10 +2049,22 @@ function clearConnectionTestResult() {
   elements.deepConnectionStatus.className = "connection-status";
 }
 
+function renderCredentialState() {
+  const settings = state.deepAuditSettings;
+  const hasKey = Boolean(settings?.hasApiKey);
+  elements.deepApiKey.placeholder = hasKey
+    ? t("settings.keyStoredPlaceholder")
+    : t("settings.keyPlaceholder");
+  elements.deepCredentialState.textContent = hasKey
+    ? t("settings.keyStored")
+    : t("settings.keyWillStore");
+}
+
 async function openSettings() {
+  const focusControl = () => elements.deepEndpoint.focus();
   try {
     if (elements.settingsDialog.open) {
-      elements.deepEndpoint.focus();
+      focusControl();
       return;
     }
     const settings = await desktop.getDeepAuditSettings();
@@ -1992,16 +2074,13 @@ async function openSettings() {
     elements.deepEndpoint.value = settings.endpoint;
     elements.deepModel.value = settings.model;
     elements.deepApiKey.value = "";
-    elements.deepApiKey.placeholder = settings.hasApiKey ? "已存储；留空可继续使用" : "输入 API key";
-    elements.deepCredentialState.textContent = settings.hasApiKey
-      ? "API key 已存储在 macOS Keychain，应用不会回显。"
-      : "API key 将存储在 macOS Keychain，应用不会回显。";
+    renderCredentialState();
     elements.clearDeepSettings.disabled = !settings.hasApiKey && !settings.endpoint && !settings.model;
     elements.settingsDialog.showModal();
-    elements.deepEndpoint.focus();
+    focusControl();
     refreshIcons();
   } catch (error) {
-    showToast(error.message, true);
+    showToast(localizedError(error), true);
   }
 }
 
@@ -2009,10 +2088,10 @@ async function testDeepAuditConnection() {
   const sequence = ++state.providerTestSequence;
   const apiKey = elements.deepApiKey.value.trim() || null;
   elements.testDeepConnection.disabled = true;
-  elements.testDeepConnection.querySelector("span").textContent = "测试中";
+  elements.testDeepConnection.querySelector("span").textContent = t("settings.testing");
   elements.deepConnectionStatus.hidden = false;
   elements.deepConnectionStatus.className = "connection-status";
-  elements.deepConnectionStatus.textContent = "正在连接...";
+  elements.deepConnectionStatus.textContent = t("settings.connecting");
   try {
     const result = await desktop.testDeepAuditConnection(
       elements.deepApiMode.value,
@@ -2023,14 +2102,19 @@ async function testDeepAuditConnection() {
     if (sequence !== state.providerTestSequence) return;
     const apiMode = deepAuditApiModeLabels[result.apiMode] || result.apiMode;
     elements.deepConnectionStatus.classList.add("is-success");
-    elements.deepConnectionStatus.textContent = `连接成功 · ${apiMode} · ${result.endpoint}`;
+    elements.deepConnectionStatus.textContent = t("settings.connectionSuccess", {
+      mode: apiMode,
+      endpoint: result.endpoint
+    });
   } catch (error) {
     if (sequence !== state.providerTestSequence) return;
     elements.deepConnectionStatus.classList.add("is-error");
-    elements.deepConnectionStatus.textContent = `连接失败：${error.message}`;
+    elements.deepConnectionStatus.textContent = t("settings.connectionFailed", {
+      message: localizedError(error)
+    });
   } finally {
     elements.testDeepConnection.disabled = false;
-    elements.testDeepConnection.querySelector("span").textContent = "测试连接";
+    elements.testDeepConnection.querySelector("span").textContent = t("settings.test");
   }
 }
 
@@ -2047,9 +2131,9 @@ async function saveDeepAuditSettings(event) {
     );
     state.deepAuditSettings = settings;
     elements.settingsDialog.close();
-    showToast("深度审查配置已更新。API key 保存在 Keychain。");
+    showToast(t("settings.saved"));
   } catch (error) {
-    showToast(error.message, true);
+    showToast(localizedError(error), true);
   } finally {
     elements.saveDeepSettings.disabled = false;
   }
@@ -2063,7 +2147,9 @@ function renderDeepAuditConsent(preview) {
   elements.deepConsentApiMode.textContent = deepAuditApiModeLabels[preview.apiMode] || preview.apiMode;
   elements.deepConsentEndpoint.textContent = preview.endpoint;
   elements.deepConsentModel.textContent = preview.model;
-  elements.deepConsentRequests.textContent = `${preview.requestCount} 次（威胁判断 + 误报复核）`;
+  elements.deepConsentRequests.textContent = t("consent.requestCount", {
+    count: preview.requestCount
+  });
   const fileRows = preview.files.map((file) => {
     const label = document.createElement("label");
     label.className = "consent-file-row";
@@ -2076,14 +2162,20 @@ function renderDeepAuditConsent(preview) {
     const path = document.createElement("strong");
     path.textContent = file.path;
     const metadata = document.createElement("small");
-    metadata.textContent = `${formatBytes(file.size)} · SHA-256 ${file.sha256.slice(0, 12)}…${file.required ? " · 必选" : ""}`;
+    metadata.textContent = t("deep.fileMetadata", {
+      size: formatBytes(file.size),
+      hash: `${file.sha256.slice(0, 12)}…`,
+      required: file.required ? t("deep.requiredSuffix") : ""
+    });
     copy.append(path, metadata);
     label.append(checkbox, copy);
     return label;
   });
   elements.deepConsentFiles.replaceChildren(...fileRows);
   elements.deepSkippedFiles.hidden = preview.skippedFiles.length === 0;
-  elements.deepSkippedSummary.textContent = `${preview.skippedFiles.length} 个文件不会上传`;
+  elements.deepSkippedSummary.textContent = t("deep.skippedSummary", {
+    count: preview.skippedFiles.length
+  });
   elements.deepSkippedList.replaceChildren(...preview.skippedFiles.map((file) => {
     const row = document.createElement("p");
     row.textContent = `${file.path} · ${file.reason}`;
@@ -2098,7 +2190,7 @@ async function requestDeepAudit() {
     const settings = await desktop.getDeepAuditSettings();
     state.deepAuditSettings = settings;
     if (!settings.hasApiKey || !settings.endpoint || !settings.model) {
-      showToast("尚未配置深度审查模型。请先在“设置”中填写 API 模式、Base URL、模型和 API key。", true);
+      showToast(t("deep.notConfigured"), true);
       return;
     }
     const preview = await desktop.previewDeepAudit(deepAuditEditorId(), state.editor.draftMarkdown);
@@ -2108,7 +2200,7 @@ async function requestDeepAudit() {
     elements.deepConsentDialog.showModal();
     refreshIcons();
   } catch (error) {
-    showToast(error.message, true);
+    showToast(localizedError(error), true);
   } finally {
     elements.deepAudit.disabled = false;
   }
@@ -2130,7 +2222,7 @@ async function performDeepAudit(event) {
     })
     .filter(Boolean);
   elements.runDeepAudit.disabled = true;
-  elements.runDeepAudit.querySelector("span").textContent = "正在审查";
+  elements.runDeepAudit.querySelector("span").textContent = t("consent.running");
   try {
     const result = context.kind === "candidate"
       ? await desktop.runStagedCandidateDeepAudit(
@@ -2153,13 +2245,13 @@ async function performDeepAudit(event) {
     } else if (context.kind === "editor" && state.editor === editor) {
       renderDeepAuditResult(result);
     }
-    showToast("深度审查完成。");
+    showToast(t("consent.completed"));
   } catch (error) {
     elements.deepConsentDialog.close();
-    showToast(error.message, true);
+    showToast(localizedError(error), true);
   } finally {
     elements.runDeepAudit.disabled = false;
-    elements.runDeepAudit.querySelector("span").textContent = "确认发送并审查";
+    elements.runDeepAudit.querySelector("span").textContent = t("consent.run");
     state.deepAuditPreview = null;
     state.deepAuditContext = null;
   }
@@ -2168,19 +2260,19 @@ async function performDeepAudit(event) {
 function renderDraftAudit(audit) {
   const verdicts = {
     clear: {
-      title: "基础检查未发现已知阻断模式",
-      badge: "可继续",
-      summary: "仅表示内置规则没有命中；不代表 Skill 已通过完整安全审计。"
+      title: t("audit.baseline.clearTitle"),
+      badge: t("audit.baseline.clearBadge"),
+      summary: t("audit.baseline.clearSummary")
     },
     review: {
-      title: "需要人工复核",
-      badge: "需复核",
-      summary: "保存前请阅读下方证据，并确认这些行为符合预期。"
+      title: t("audit.baseline.reviewTitle"),
+      badge: t("audit.baseline.reviewBadge"),
+      summary: t("audit.baseline.reviewSummary")
     },
     block: {
-      title: "建议阻止",
-      badge: "已阻止",
-      summary: "草稿包含结构错误或高影响操作，解决后才能保存。"
+      title: t("audit.baseline.blockTitle"),
+      badge: t("audit.baseline.blockBadge"),
+      summary: t("audit.baseline.blockSummary")
     }
   };
   const verdict = verdicts[audit.verdict];
@@ -2196,8 +2288,8 @@ function renderDraftAudit(audit) {
   elements.diffEmpty.hidden = audit.diff.changed;
   elements.diffView.hidden = !audit.diff.changed;
   if (audit.diff.changed) {
-    elements.diffBefore.textContent = audit.diff.before.join("\n") || "（无内容）";
-    elements.diffAfter.textContent = audit.diff.after.join("\n") || "（无内容）";
+    elements.diffBefore.textContent = audit.diff.before.join("\n") || t("common.emptyContent");
+    elements.diffAfter.textContent = audit.diff.after.join("\n") || t("common.emptyContent");
   }
   elements.auditDraft.disabled = false;
   updateEditorStatus();
@@ -2226,7 +2318,7 @@ async function runDraftAudit() {
     renderCreationPreview(state.editor.preview);
     renderDraftAudit(audit);
   } catch (error) {
-    if (sequence === state.auditSequence) renderAuditError(error.message);
+    if (sequence === state.auditSequence) renderAuditError(localizedError(error));
   } finally {
     if (state.editor && state.editor.id === editorId && sequence === state.auditSequence) {
       state.editor.auditLoading = false;
@@ -2239,7 +2331,7 @@ async function runDraftAudit() {
 async function openEditor(id) {
   const detail = state.detail?.id === id ? state.detail : await api(`/api/skills/${encodeURIComponent(id)}`);
   if (!detail.editable) {
-    showToast("这个 Skill 由系统或插件管理，不能在这里编辑。", true);
+    showToast(t("editor.managedReadOnly"), true);
     return;
   }
   state.editor = {
@@ -2257,7 +2349,8 @@ async function openEditor(id) {
   state.deepAuditContext = null;
   renderDeepAuditResult(null);
   elements.editorTitle.textContent = detail.displayName;
-  elements.saveDraft.innerHTML = '<i data-lucide="save"></i><span>保存修改</span>';
+  elements.saveDraft.innerHTML = '<i data-lucide="save"></i><span></span>';
+  elements.saveDraft.querySelector("span").textContent = t("editor.save");
   elements.draftSource.value = detail.markdown;
   syncGuidedFields();
   setEditorMode("guided");
@@ -2286,8 +2379,9 @@ async function openNewSkill() {
   state.deepAuditPreview = null;
   state.deepAuditContext = null;
   renderDeepAuditResult(null);
-  elements.editorTitle.textContent = "新建 Skill";
-  elements.saveDraft.innerHTML = '<i data-lucide="plus"></i><span>创建 Skill</span>';
+  elements.editorTitle.textContent = t("editor.newTitle");
+  elements.saveDraft.innerHTML = '<i data-lucide="plus"></i><span></span>';
+  elements.saveDraft.querySelector("span").textContent = t("editor.create");
   elements.draftSource.value = markdown;
   syncGuidedFields();
   setEditorMode("source");
@@ -2309,11 +2403,11 @@ async function performDraftSave() {
     });
     elements.editorDialog.close();
     state.editor = null;
-    showToast("修改已保存。请在新任务中使用最新版本。");
+    showToast(t("editor.saved"));
     await loadSkills();
     await selectSkill(id);
   } catch (error) {
-    showToast(error.message, true);
+    showToast(localizedError(error), true);
   } finally {
     if (state.editor) updateEditorStatus();
   }
@@ -2327,11 +2421,11 @@ async function performDraftCreate() {
     const created = await desktop.createSkill(draftMarkdown, preview.draftHash);
     elements.editorDialog.close();
     state.editor = null;
-    showToast("Skill 已创建。请在新任务中使用最新版本。");
+    showToast(t("editor.created"));
     await loadSkills({ preserveSelection: false });
     await selectSkill(created.id);
   } catch (error) {
-    showToast(error.message, true);
+    showToast(localizedError(error), true);
   } finally {
     if (state.editor) updateEditorStatus();
   }
@@ -2342,11 +2436,11 @@ function requestDraftSave() {
   if (state.editor.isNew) {
     if (!state.editor.preview?.canCreate) return;
     presentConfirmation({
-      title: "创建新 Skill",
+      title: t("editor.createConfirmTitle"),
       message: state.editor.deepAudit?.verdict === "block"
-        ? `云端深度审查保留了高影响风险项。阅读证据后，仍将在 ${state.editor.preview.destination} 创建 SKILL.md。`
-        : `将在 ${state.editor.preview.destination} 创建 SKILL.md。`,
-      label: "确认创建",
+        ? t("editor.createRiskMessage", { destination: state.editor.preview.destination })
+        : t("editor.createMessage", { destination: state.editor.preview.destination }),
+      label: t("editor.confirmCreate"),
       action: performDraftCreate,
       tone: "primary"
     });
@@ -2357,11 +2451,11 @@ function requestDraftSave() {
     return;
   }
   presentConfirmation({
-    title: "保存需要复核的草稿",
+    title: t("editor.reviewSaveTitle"),
     message: state.editor.deepAudit?.verdict === "block"
-      ? "云端深度审查保留了高影响风险项。阅读证据并确认行为符合预期后再保存。"
-      : "检查发现了需要人工复核的行为。确认这些行为符合预期后再保存。",
-    label: "确认保存",
+      ? t("editor.reviewSaveDeepMessage")
+      : t("editor.reviewSaveMessage"),
+    label: t("editor.confirmSave"),
     action: performDraftSave
   });
 }
@@ -2373,9 +2467,9 @@ function requestCloseEditor() {
     return;
   }
   presentConfirmation({
-    title: "放弃未保存修改",
-    message: "关闭后，这次草稿修改不会保留。",
-    label: "放弃修改",
+    title: t("editor.discardTitle"),
+    message: t("editor.discardMessage"),
+    label: t("editor.discard"),
     action: async () => {
       elements.editorDialog.close();
       state.editor = null;
@@ -2385,16 +2479,18 @@ function requestCloseEditor() {
 
 async function requestSkillLifecycle(action, skill) {
   const config = {
-    disable: ["停用 Skill", `停用 ${skill.displayName}？新任务将不再加载它。`, "确认停用", "primary"],
-    enable: ["重新启用 Skill", `将 ${skill.displayName} 恢复到个人 Skill？`, "确认启用", "primary"],
-    archive: ["归档 Skill", `将 ${skill.displayName} 移入可恢复归档？`, "确认归档", "primary"],
-    restore: ["恢复 Skill", `将 ${skill.displayName} 恢复到启用的个人 Skill？`, "确认恢复", "primary"],
-    delete: ["永久删除 Skill", `永久删除 ${skill.displayName} 及其全部文件？此操作无法撤销。`, "永久删除", "danger"]
+    disable: [t("lifecycle.disableTitle"), t("lifecycle.disableMessage", { name: skill.displayName }), t("lifecycle.disableConfirm"), "primary", "lifecycle.actionDisable"],
+    enable: [t("lifecycle.enableTitle"), t("lifecycle.enableMessage", { name: skill.displayName }), t("lifecycle.enableConfirm"), "primary", "lifecycle.actionEnable"],
+    archive: [t("lifecycle.archiveTitle"), t("lifecycle.archiveMessage", { name: skill.displayName }), t("lifecycle.archiveConfirm"), "primary", "lifecycle.actionArchive"],
+    restore: [t("lifecycle.restoreTitle"), t("lifecycle.restoreMessage", { name: skill.displayName }), t("lifecycle.restoreConfirm"), "primary", "lifecycle.actionRestore"],
+    delete: [t("lifecycle.deleteTitle"), t("lifecycle.deleteMessage", { name: skill.displayName }), t("lifecycle.deleteConfirm"), "danger", null]
   }[action];
   try {
     const preview = await desktop.previewSkillLifecycle(skill.id, action);
     if (!preview.canApply) {
-      showToast(`目标位置已有同名目录：${preview.conflict?.path || preview.destination}`, true);
+      showToast(t("lifecycle.destinationConflict", {
+        path: preview.conflict?.path || preview.destination
+      }), true);
       return;
     }
     const apply = action === "delete"
@@ -2405,7 +2501,7 @@ async function requestSkillLifecycle(action, skill) {
         applyCatalogState(removeCatalogSkill(state.skills, state.counts, skill.id));
         elements.detailPanel.classList.remove("is-open");
         renderDetail();
-        showToast(`${skill.displayName} 已永久删除。`);
+        showToast(t("lifecycle.deleted", { name: skill.displayName }));
       }
       : async () => {
         const result = await desktop.applySkillLifecycle(skill.id, action, preview.directoryRevision);
@@ -2414,18 +2510,18 @@ async function requestSkillLifecycle(action, skill) {
         applyCatalogState(replaceCatalogSkill(state.skills, state.counts, skill.id, result.skill));
         elements.detailPanel.classList.add("is-open");
         renderDetail();
-        showToast(`${config[2].replace("确认", "")}完成。请在新任务中使用最新状态。`);
+        showToast(t("lifecycle.completed", { action: t(config[4]) }));
       };
     presentConfirmation({
       title: config[0],
-      message: `${config[1]}${preview.destination ? `\n目标位置：${preview.destination}` : ""}`,
+      message: `${config[1]}${preview.destination ? `\n${t("lifecycle.destination", { path: preview.destination })}` : ""}`,
       label: config[2],
       action: apply,
       tone: config[3],
       requiredName: action === "delete" ? skill.name : null
     });
   } catch (error) {
-    showToast(error.message, true);
+    showToast(localizedError(error), true);
   }
 }
 
@@ -2479,12 +2575,68 @@ async function loadSkills({ preserveSelection = true, selectedDetail = null, for
     renderList();
     refreshIcons();
   } catch (error) {
-    showToast(error.message, true);
+    showToast(localizedError(error), true);
   } finally {
     elements.refresh.classList.remove("is-spinning");
     elements.refresh.disabled = false;
   }
 }
+
+function refreshLocalizedInterface() {
+  updateCounts();
+  renderList();
+  renderDetail();
+
+  if (state.editor) {
+    if (state.editor.isNew) elements.editorTitle.textContent = t("editor.newTitle");
+    const saveLabel = state.editor.isNew ? t("editor.create") : t("editor.save");
+    const saveText = elements.saveDraft.querySelector("span");
+    if (saveText) saveText.textContent = saveLabel;
+    syncGuidedFields();
+    renderCreationPreview(state.editor.preview);
+    if (state.editor.audit) renderDraftAudit(state.editor.audit);
+    else if (state.editor.auditLoading) renderAuditLoading();
+    renderDeepAuditResult(state.editor.deepAudit || null);
+    updateEditorStatus();
+  }
+
+  if (state.candidate) renderCandidateReview();
+
+  if (state.candidateLocalPath) {
+    elements.candidateLocalPath.textContent = state.candidateLocalPath;
+  } else {
+    elements.candidateLocalPath.textContent = t("candidate.noFolder");
+  }
+
+  const review = state.bundleWorkflow.importReview;
+  if (review) {
+    const wasStale = state.bundleInstallReviewStale;
+    renderBundleImportReview(review);
+    if (state.bundleInstallResult) {
+      renderBundleInstallOutcomes(state.bundleInstallResult);
+      elements.bundleImportStatus.textContent = bundleInstallStatusText(state.bundleInstallResult).text;
+    }
+    if (wasStale) markBundleInstallReviewStale(t("bundle.receiptRetained"));
+  }
+
+  if (!elements.bundleExportReceipt.hidden && elements.bundleReceiptDestination.textContent) {
+    elements.serverInstallPrompt.textContent = serverInstallPrompt(
+      elements.bundleReceiptDestination.textContent,
+      localization.locale
+    );
+  }
+
+  const settings = state.deepAuditSettings;
+  if (settings) renderCredentialState();
+  if (state.deepAuditPreview) renderDeepAuditConsent(state.deepAuditPreview);
+  clearConnectionTestResult();
+  refreshIcons();
+}
+
+localization.subscribe(() => {
+  refreshLocalizedInterface();
+  desktop.setInterfaceLocale(localization.locale).catch(() => {});
+});
 
 document.querySelector("#source-nav").addEventListener("click", (event) => {
   const button = event.target.closest("[data-source]");
@@ -2507,7 +2659,6 @@ elements.create.addEventListener("click", openNewSkill);
 elements.exportSkills.addEventListener("click", openBundleExport);
 elements.importBundleButton.addEventListener("click", openBundleImport);
 elements.reviewCandidate.addEventListener("click", openCandidateIntake);
-elements.settings.addEventListener("click", openSettings);
 elements.closeDetail.addEventListener("click", () => elements.detailPanel.classList.remove("is-open"));
 elements.closeEditor.addEventListener("click", requestCloseEditor);
 elements.guidedMode.addEventListener("click", () => setEditorMode("guided"));
@@ -2529,9 +2680,9 @@ elements.copyServerInstallPrompt.addEventListener("click", async () => {
   if (!prompt) return;
   try {
     await navigator.clipboard.writeText(prompt);
-    showToast("服务器安装指令已复制。");
+    showToast(t("copy.serverPrompt"));
   } catch (error) {
-    showToast(`复制失败：${error.message}`, true);
+    showToast(t("common.copyFailed", { message: localizedError(error) }), true);
   }
 });
 elements.applyBundleExport.addEventListener("click", applyBundleExport);
@@ -2601,13 +2752,13 @@ document.querySelector("#cancel-deep-audit-consent").addEventListener("click", (
 });
 elements.clearDeepSettings.addEventListener("click", () => {
   presentConfirmation({
-    title: "移除深度审查配置",
-    message: "将删除已保存的服务地址、模型名称和 Keychain 中的 API key。",
-    label: "确认移除",
+    title: t("settings.removeTitle"),
+    message: t("settings.removeMessage"),
+    label: t("settings.removeConfirm"),
     action: async () => {
       state.deepAuditSettings = await desktop.clearDeepAuditSettings();
       elements.settingsDialog.close();
-      showToast("深度审查配置已移除。");
+      showToast(t("settings.removed"));
     }
   });
 });
@@ -2661,7 +2812,7 @@ elements.confirmName.addEventListener("input", () => {
 document.querySelector("#copy-path-button").addEventListener("click", async () => {
   if (!state.detail) return;
   await navigator.clipboard.writeText(state.detail.path);
-  showToast("路径已复制。");
+  showToast(t("detail.pathCopied"));
 });
 
 elements.confirmForm.addEventListener("submit", async (event) => {
@@ -2674,7 +2825,7 @@ elements.confirmForm.addEventListener("submit", async (event) => {
     elements.confirmDialog.close();
   } catch (error) {
     elements.confirmDialog.close();
-    showToast(error.message, true);
+    showToast(localizedError(error), true);
   } finally {
     setConfirmationBusy(false);
     state.confirmAction = null;
@@ -2684,11 +2835,6 @@ elements.confirmForm.addEventListener("submit", async (event) => {
 
 
 document.addEventListener("keydown", (event) => {
-  if (event.metaKey && !event.altKey && !event.ctrlKey && event.key === ",") {
-    event.preventDefault();
-    openSettings();
-    return;
-  }
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f") {
     event.preventDefault();
     elements.search.focus();
@@ -2708,4 +2854,14 @@ document.addEventListener("keydown", (event) => {
 });
 
 refreshIcons();
+listen("studio-menu-action", ({ payload }) => {
+  if (payload === "open-settings") {
+    openSettings();
+  } else if (payload === "locale:zh-CN") {
+    localization.setLocale("zh-CN");
+  } else if (payload === "locale:en") {
+    localization.setLocale("en");
+  }
+}).catch(() => {});
+desktop.setInterfaceLocale(localization.locale).catch(() => {});
 loadSkills({ preserveSelection: false });

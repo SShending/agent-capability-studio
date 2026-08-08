@@ -11,7 +11,138 @@ use skills::{
     DeleteSkillResult, LifecyclePreview, LifecycleResult, NewSkillPreview, SkillDetail, Workspace,
     WorkspaceError,
 };
-use tauri::{Manager, State};
+use tauri::{
+    menu::{CheckMenuItemBuilder, MenuBuilder, MenuItemBuilder, SubmenuBuilder},
+    Emitter, Manager, State,
+};
+
+const MENU_SETTINGS: &str = "studio-settings";
+const MENU_LANGUAGE_ZH_CN: &str = "studio-language-zh-cn";
+const MENU_LANGUAGE_EN: &str = "studio-language-en";
+
+struct MenuLabels {
+    settings: &'static str,
+    language: &'static str,
+    edit: &'static str,
+    window: &'static str,
+    about: &'static str,
+    services: &'static str,
+    hide: &'static str,
+    hide_others: &'static str,
+    show_all: &'static str,
+    quit: &'static str,
+    undo: &'static str,
+    redo: &'static str,
+    cut: &'static str,
+    copy: &'static str,
+    paste: &'static str,
+    select_all: &'static str,
+    minimize: &'static str,
+    zoom: &'static str,
+    fullscreen: &'static str,
+    close: &'static str,
+}
+
+fn menu_labels(locale: &str) -> MenuLabels {
+    if locale == "en" {
+        MenuLabels {
+            settings: "Settings…",
+            language: "Interface Language",
+            edit: "Edit",
+            window: "Window",
+            about: "About Agent Skill Studio",
+            services: "Services",
+            hide: "Hide Agent Skill Studio",
+            hide_others: "Hide Others",
+            show_all: "Show All",
+            quit: "Quit Agent Skill Studio",
+            undo: "Undo",
+            redo: "Redo",
+            cut: "Cut",
+            copy: "Copy",
+            paste: "Paste",
+            select_all: "Select All",
+            minimize: "Minimize",
+            zoom: "Zoom",
+            fullscreen: "Enter Full Screen",
+            close: "Close Window",
+        }
+    } else {
+        MenuLabels {
+            settings: "设置…",
+            language: "界面语言",
+            edit: "编辑",
+            window: "窗口",
+            about: "关于 Agent Skill Studio",
+            services: "服务",
+            hide: "隐藏 Agent Skill Studio",
+            hide_others: "隐藏其他",
+            show_all: "全部显示",
+            quit: "退出 Agent Skill Studio",
+            undo: "撤销",
+            redo: "重做",
+            cut: "剪切",
+            copy: "复制",
+            paste: "粘贴",
+            select_all: "全选",
+            minimize: "最小化",
+            zoom: "缩放",
+            fullscreen: "进入全屏幕",
+            close: "关闭窗口",
+        }
+    }
+}
+
+fn install_interface_menu(app: &tauri::AppHandle, locale: &str) -> tauri::Result<()> {
+    let labels = menu_labels(locale);
+    let settings = MenuItemBuilder::with_id(MENU_SETTINGS, labels.settings)
+        .accelerator("CmdOrCtrl+,")
+        .build(app)?;
+    let chinese = CheckMenuItemBuilder::with_id(MENU_LANGUAGE_ZH_CN, "简体中文")
+        .checked(locale != "en")
+        .build(app)?;
+    let english = CheckMenuItemBuilder::with_id(MENU_LANGUAGE_EN, "English")
+        .checked(locale == "en")
+        .build(app)?;
+    let language = SubmenuBuilder::new(app, labels.language)
+        .items(&[&chinese, &english])
+        .build()?;
+    let application = SubmenuBuilder::new(app, "Agent Skill Studio")
+        .about_with_text(labels.about, None)
+        .separator()
+        .item(&settings)
+        .item(&language)
+        .separator()
+        .services_with_text(labels.services)
+        .separator()
+        .hide_with_text(labels.hide)
+        .hide_others_with_text(labels.hide_others)
+        .show_all_with_text(labels.show_all)
+        .separator()
+        .quit_with_text(labels.quit)
+        .build()?;
+    let edit = SubmenuBuilder::new(app, labels.edit)
+        .undo_with_text(labels.undo)
+        .redo_with_text(labels.redo)
+        .separator()
+        .cut_with_text(labels.cut)
+        .copy_with_text(labels.copy)
+        .paste_with_text(labels.paste)
+        .select_all_with_text(labels.select_all)
+        .build()?;
+    let window = SubmenuBuilder::new(app, labels.window)
+        .minimize_with_text(labels.minimize)
+        .maximize_with_text(labels.zoom)
+        .fullscreen_with_text(labels.fullscreen)
+        .separator()
+        .close_window_with_text(labels.close)
+        .build()?;
+    let menu = MenuBuilder::new(app)
+        .items(&[&application, &edit, &window])
+        .build()?;
+    app.set_menu(menu)?;
+    Ok(())
+}
 
 struct AppState {
     workspace: Workspace,
@@ -88,6 +219,14 @@ impl From<BundleInstallError> for CommandError {
             message: error.to_string(),
         }
     }
+}
+
+#[tauri::command]
+fn set_interface_locale(locale: String, app: tauri::AppHandle) -> Result<(), String> {
+    if locale != "zh-CN" && locale != "en" {
+        return Err("unsupported interface locale".into());
+    }
+    install_interface_menu(&app, &locale).map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -628,6 +767,25 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            install_interface_menu(app.handle(), "zh-CN")?;
+            app.on_menu_event(|app_handle, event| match event.id().as_ref() {
+                MENU_SETTINGS => {
+                    if let Some(window) = app_handle.get_webview_window("main") {
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                    }
+                    let _ = app_handle.emit("studio-menu-action", "open-settings");
+                }
+                MENU_LANGUAGE_ZH_CN => {
+                    let _ = install_interface_menu(app_handle, "zh-CN");
+                    let _ = app_handle.emit("studio-menu-action", "locale:zh-CN");
+                }
+                MENU_LANGUAGE_EN => {
+                    let _ = install_interface_menu(app_handle, "en");
+                    let _ = app_handle.emit("studio-menu-action", "locale:en");
+                }
+                _ => {}
+            });
             let settings_directory = app.path().app_config_dir()?;
             let candidate_staging_directory =
                 app.path().app_cache_dir()?.join("candidate-staging-v1");
@@ -641,6 +799,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            set_interface_locale,
             list_skills,
             refresh_skills,
             get_skill,

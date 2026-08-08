@@ -10,47 +10,47 @@
   </head>
   <body>
     <div class="app-shell">
-      <aside class="sidebar" aria-label="Skill 分类">
+      <aside class="sidebar" aria-label="Skill 分类" data-i18n-aria-label="sidebar.skillCategories">
         <div class="brand-block" data-tauri-drag-region>
           <div class="brand-mark" aria-hidden="true"><i data-lucide="blocks"></i></div>
           <div>
             <div class="brand-name">Skill Studio</div>
-            <div class="local-status"><span></span>仅本机</div>
+            <div class="local-status"><span class="status-dot"></span><span data-i18n="app.localOnly">仅本机</span></div>
           </div>
         </div>
 
-        <div class="nav-label">资料库</div>
+        <div class="nav-label" data-i18n="nav.library">资料库</div>
         <nav class="source-nav" id="source-nav">
           <button class="source-item is-active" type="button" data-source="all" aria-pressed="true">
-            <i data-lucide="library"></i><span>所有技能</span><strong id="count-all">0</strong>
+            <i data-lucide="library"></i><span data-i18n="nav.all">所有技能</span><strong id="count-all">0</strong>
           </button>
           <button class="source-item" type="button" data-source="personal" aria-pressed="false">
-            <i data-lucide="user-round"></i><span>个人</span><strong id="count-personal">0</strong>
+            <i data-lucide="user-round"></i><span data-i18n="nav.personal">个人</span><strong id="count-personal">0</strong>
           </button>
           <button class="source-item" type="button" data-source="disabled" aria-pressed="false">
-            <i data-lucide="circle-pause"></i><span>已停用</span><strong id="count-disabled">0</strong>
+            <i data-lucide="circle-pause"></i><span data-i18n="nav.disabled">已停用</span><strong id="count-disabled">0</strong>
           </button>
           <button class="source-item" type="button" data-source="system" aria-pressed="false">
-            <i data-lucide="shield"></i><span>系统</span><strong id="count-system">0</strong>
+            <i data-lucide="shield"></i><span data-i18n="nav.system">系统</span><strong id="count-system">0</strong>
           </button>
           <button class="source-item" type="button" data-source="plugin" aria-pressed="false">
-            <i data-lucide="blocks"></i><span>插件</span><strong id="count-plugin">0</strong>
+            <i data-lucide="blocks"></i><span data-i18n="nav.plugin">插件</span><strong id="count-plugin">0</strong>
           </button>
           <button class="source-item" type="button" data-source="archive" aria-pressed="false">
-            <i data-lucide="archive"></i><span>归档</span><strong id="count-archive">0</strong>
+            <i data-lucide="archive"></i><span data-i18n="nav.archive">归档</span><strong id="count-archive">0</strong>
           </button>
         </nav>
 
         <div class="sidebar-section">
-          <div class="section-label">健康状况</div>
+          <div class="section-label" data-i18n="health.title">健康状况</div>
           <div class="audit-status" id="audit-status">
             <span class="audit-indicator"></span>
-            <span id="audit-label">正在检查</span>
+            <span id="audit-label" data-i18n="health.checking">正在检查</span>
           </div>
-          <div class="audit-issue-list" id="audit-issue-list" aria-label="存在阻断问题的个人 Skills" hidden></div>
+          <div class="audit-issue-list" id="audit-issue-list" aria-label="存在阻断问题的个人 Skills" data-i18n-aria-label="health.issuesLabel" hidden></div>
         </div>
 
-        <div class="sidebar-footer" title="Codex Skills 位置">
+        <div class="sidebar-footer" title="Codex Skills 位置" data-i18n-title="sidebar.codexLocation">
           <i data-lucide="hard-drive"></i>
           <div>
             <span>Codex Home</span>
@@ -62,69 +62,66 @@
       <main class="main-content">
         <header class="topbar" data-tauri-drag-region>
           <div>
-            <h1>技能库</h1>
-            <p id="result-summary">正在读取...</p>
+            <h1 data-i18n="library.title">技能库</h1>
+            <p id="result-summary" data-i18n="library.loading">正在读取...</p>
           </div>
           <div class="topbar-actions">
             <button class="secondary-button" id="export-skills-button" type="button">
-              <i data-lucide="package-open"></i><span>导出</span>
+              <i data-lucide="package-open"></i><span data-i18n="library.export">导出</span>
             </button>
             <button class="secondary-button" id="import-skill-bundle-button" type="button">
-              <i data-lucide="package-plus"></i><span>导入 Bundle</span>
+              <i data-lucide="package-plus"></i><span data-i18n="library.importBundle">导入 Bundle</span>
             </button>
             <button class="secondary-button candidate-entry-button" id="review-candidate-button" type="button">
-              <i data-lucide="file-input"></i><span>导入 Skill</span>
+              <i data-lucide="file-input"></i><span data-i18n="library.importSkill">导入 Skill</span>
             </button>
-            <button class="icon-button" id="settings-button" type="button" aria-label="设置" title="设置">
-              <i data-lucide="settings-2"></i>
-            </button>
-            <button class="icon-button" id="refresh-button" type="button" aria-label="刷新" title="刷新">
+            <button class="icon-button" id="refresh-button" type="button" aria-label="刷新" title="刷新" data-i18n-aria-label="common.refresh" data-i18n-title="common.refresh">
               <i data-lucide="refresh-cw"></i>
             </button>
-            <button class="icon-button accent-button" id="create-skill-button" type="button" aria-label="新建 Skill" title="新建 Skill">
+            <button class="icon-button accent-button" id="create-skill-button" type="button" aria-label="新建 Skill" title="新建 Skill" data-i18n-aria-label="library.createSkill" data-i18n-title="library.createSkill">
               <i data-lucide="plus"></i>
             </button>
           </div>
         </header>
 
-        <section class="toolbar" aria-label="筛选工具">
+        <section class="toolbar" aria-label="筛选工具" data-i18n-aria-label="filter.tools">
           <label class="search-field">
             <i data-lucide="search"></i>
-            <input id="search-input" type="search" placeholder="搜索名称或描述" autocomplete="off" />
+            <input id="search-input" type="search" placeholder="搜索名称或描述" data-i18n-placeholder="filter.searchPlaceholder" autocomplete="off" />
           </label>
-          <div class="sort-control" title="排序方式">
+          <div class="sort-control" title="排序方式" data-i18n-title="filter.sortTitle">
             <i data-lucide="arrow-up-down"></i>
-            <label class="sr-only" for="sort-select">排序</label>
+            <label class="sr-only" for="sort-select" data-i18n="filter.sort">排序</label>
             <select id="sort-select">
-              <option value="source">来源</option>
-              <option value="name">名称</option>
-              <option value="updated">最近更新</option>
+              <option value="source" data-i18n="filter.bySource">来源</option>
+              <option value="name" data-i18n="filter.byName">名称</option>
+              <option value="updated" data-i18n="filter.byUpdated">最近更新</option>
             </select>
           </div>
         </section>
 
         <section class="skill-list-region" aria-live="polite">
           <div class="list-header" aria-hidden="true">
-            <span>Skill</span><span>来源</span><span>触发规则</span><span>文件</span>
+            <span data-i18n="list.skill">Skill</span><span data-i18n="common.source">来源</span><span data-i18n="list.trigger">触发规则</span><span data-i18n="common.files">文件</span>
           </div>
           <div class="skill-list" id="skill-list"></div>
           <div class="empty-state" id="empty-state" hidden>
             <div class="empty-grid" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
-            <h2>没有匹配的 Skill</h2>
-            <p>调整搜索或来源筛选。</p>
+            <h2 data-i18n="list.noMatches">没有匹配的 Skill</h2>
+            <p data-i18n="list.adjustFilters">调整搜索或来源筛选。</p>
           </div>
         </section>
       </main>
 
-      <aside class="detail-panel" id="detail-panel" aria-label="Skill 详情">
+      <aside class="detail-panel" id="detail-panel" aria-label="Skill 详情" data-i18n-aria-label="detail.label">
         <div class="detail-empty" id="detail-empty">
           <i data-lucide="mouse-pointer-2"></i>
-          <p>选择一个 Skill</p>
+          <p data-i18n="detail.select">选择一个 Skill</p>
         </div>
         <div class="detail-content" id="detail-content" hidden>
-          <div class="inspector-label">检查器</div>
+          <div class="inspector-label" data-i18n="detail.inspector">检查器</div>
           <div class="detail-header">
-            <button class="icon-button mobile-only" id="close-detail-button" type="button" aria-label="关闭详情" title="关闭详情">
+            <button class="icon-button mobile-only" id="close-detail-button" type="button" aria-label="关闭详情" title="关闭详情" data-i18n-aria-label="detail.close" data-i18n-title="detail.close">
               <i data-lucide="x"></i>
             </button>
             <div class="detail-icon" id="detail-icon"></div>
@@ -139,17 +136,17 @@
           <div class="detail-actions" id="detail-actions"></div>
 
           <dl class="metadata-list">
-            <div><dt>状态</dt><dd id="detail-state"></dd></div>
-            <div><dt>触发规则</dt><dd id="detail-trigger"></dd></div>
-            <div><dt>文件数</dt><dd id="detail-files"></dd></div>
-            <div><dt>最近修改</dt><dd id="detail-updated"></dd></div>
+            <div><dt data-i18n="detail.state">状态</dt><dd id="detail-state"></dd></div>
+            <div><dt data-i18n="detail.trigger">触发规则</dt><dd id="detail-trigger"></dd></div>
+            <div><dt data-i18n="detail.fileCount">文件数</dt><dd id="detail-files"></dd></div>
+            <div><dt data-i18n="detail.updated">最近修改</dt><dd id="detail-updated"></dd></div>
           </dl>
 
           <div class="path-block">
-            <div class="section-label">位置</div>
+            <div class="section-label" data-i18n="common.location">位置</div>
             <div class="path-row">
               <code id="detail-path"></code>
-              <button class="icon-button compact" id="copy-path-button" type="button" aria-label="复制路径" title="复制路径">
+              <button class="icon-button compact" id="copy-path-button" type="button" aria-label="复制路径" title="复制路径" data-i18n-aria-label="detail.copyPath" data-i18n-title="detail.copyPath">
                 <i data-lucide="copy"></i>
               </button>
             </div>
@@ -163,97 +160,97 @@
       </aside>
     </div>
 
-    <dialog class="workspace-dialog" id="editor-dialog">
+    <dialog class="workspace-dialog" id="editor-dialog" aria-labelledby="editor-title">
       <div class="workspace-shell">
         <header class="workspace-header">
           <div class="workspace-title">
-            <button class="icon-button" id="close-editor-button" type="button" aria-label="关闭编辑器" title="关闭">
+            <button class="icon-button" id="close-editor-button" type="button" aria-label="关闭编辑器" title="关闭" data-i18n-aria-label="editor.close" data-i18n-title="common.close">
               <i data-lucide="x"></i>
             </button>
             <div>
-              <span class="workspace-kicker">Skill 草稿</span>
-              <h2 id="editor-title">编辑 Skill</h2>
+              <span class="workspace-kicker" data-i18n="editor.kicker">Skill 草稿</span>
+              <h2 id="editor-title" data-i18n="editor.editTitle">编辑 Skill</h2>
             </div>
-            <span class="draft-status" id="draft-status">未修改</span>
+            <span class="draft-status" id="draft-status" data-i18n="editor.unchanged">未修改</span>
           </div>
           <div class="workspace-actions">
             <button class="secondary-button" id="deep-audit-button" type="button">
-              <i data-lucide="shield-check"></i><span>深度审查</span>
+              <i data-lucide="shield-check"></i><span data-i18n="editor.deepAudit">深度审查</span>
             </button>
             <button class="secondary-button" id="audit-draft-button" type="button">
-              <i data-lucide="scan-search"></i><span>重新检查</span>
+              <i data-lucide="scan-search"></i><span data-i18n="editor.recheck">重新检查</span>
             </button>
             <button class="primary-button" id="save-draft-button" type="button" disabled>
-              <i data-lucide="save"></i><span>保存修改</span>
+              <i data-lucide="save"></i><span data-i18n="editor.save">保存修改</span>
             </button>
           </div>
         </header>
 
         <div class="workspace-body">
-          <section class="editor-pane" aria-label="Skill 编辑器">
+          <section class="editor-pane" aria-label="Skill 编辑器" data-i18n-aria-label="editor.label">
             <div class="editor-toolbar">
-              <div class="segmented-control" role="tablist" aria-label="编辑方式">
-                <button class="is-active" id="guided-mode-button" type="button" role="tab" aria-selected="true">
-                  <i data-lucide="list-checks"></i><span>引导编辑</span>
+              <div class="segmented-control" role="tablist" aria-label="编辑方式" data-i18n-aria-label="editor.modeLabel">
+                <button class="is-active" id="guided-mode-button" type="button" role="tab" aria-controls="guided-editor" aria-selected="true">
+                  <i data-lucide="list-checks"></i><span data-i18n="editor.guided">引导编辑</span>
                 </button>
-                <button id="source-mode-button" type="button" role="tab" aria-selected="false">
-                  <i data-lucide="code-2"></i><span>源码</span>
+                <button id="source-mode-button" type="button" role="tab" aria-controls="source-editor" aria-selected="false">
+                  <i data-lucide="code-2"></i><span data-i18n="editor.source">源码</span>
                 </button>
               </div>
             </div>
 
-            <div class="guided-editor" id="guided-editor">
+            <div class="guided-editor" id="guided-editor" role="tabpanel" aria-labelledby="guided-mode-button">
               <label class="editor-field compact-field">
-                <span>Skill 名称</span>
+                <span data-i18n="editor.skillName">Skill 名称</span>
                 <input id="draft-name" type="text" readonly />
               </label>
               <label class="editor-field description-field">
-                <span>用途与触发条件</span>
+                <span data-i18n="editor.purpose">用途与触发条件</span>
                 <textarea id="draft-description" spellcheck="false"></textarea>
               </label>
               <section class="structured-editor" aria-labelledby="draft-structure-label">
                 <div class="structured-editor-heading">
-                  <span id="draft-structure-label">文档结构</span>
+                  <span id="draft-structure-label" data-i18n="editor.structure">文档结构</span>
                   <strong id="draft-section-count">0</strong>
                 </div>
                 <div class="draft-sections" id="draft-sections"></div>
                 <label class="editor-field instruction-field" id="draft-body-fallback-field" hidden>
-                  <span>正文</span>
+                  <span data-i18n="editor.body">正文</span>
                   <textarea id="draft-body-fallback" spellcheck="false"></textarea>
                 </label>
               </section>
             </div>
 
-            <div class="source-editor" id="source-editor" hidden>
-              <textarea id="draft-source" aria-label="SKILL.md 源码" spellcheck="false"></textarea>
+            <div class="source-editor" id="source-editor" role="tabpanel" aria-labelledby="source-mode-button" hidden>
+              <textarea id="draft-source" aria-label="SKILL.md 源码" data-i18n-aria-label="editor.sourceLabel" spellcheck="false"></textarea>
             </div>
           </section>
 
-          <aside class="review-pane" aria-label="草稿检查结果">
+          <aside class="review-pane" aria-label="草稿检查结果" data-i18n-aria-label="editor.reviewLabel">
             <section class="verdict-section">
               <div class="review-heading">
                 <div>
-                  <span>检查结论</span>
-                  <h3 id="audit-verdict">等待检查</h3>
+                  <span data-i18n="audit.conclusion">检查结论</span>
+                  <h3 id="audit-verdict" data-i18n="audit.waiting">等待检查</h3>
                 </div>
-                <span class="verdict-badge is-loading" id="audit-verdict-badge">检查中</span>
+                <span class="verdict-badge is-loading" id="audit-verdict-badge" data-i18n="audit.inProgress">检查中</span>
               </div>
-              <p id="audit-summary">正在检查当前草稿。</p>
+              <p id="audit-summary" data-i18n="audit.currentDraft">正在检查当前草稿。</p>
             </section>
 
-            <section class="creation-preview" id="creation-preview" hidden aria-label="创建预览">
-              <span>创建位置</span>
-              <code id="creation-destination">等待有效名称</code>
-              <strong id="creation-state">正在检查</strong>
+            <section class="creation-preview" id="creation-preview" hidden aria-label="创建预览" data-i18n-aria-label="audit.creationPreview">
+              <span data-i18n="audit.creationLocation">创建位置</span>
+              <code id="creation-destination" data-i18n="audit.waitingName">等待有效名称</code>
+              <strong id="creation-state" data-i18n="common.checking">正在检查</strong>
             </section>
 
             <section class="deep-result-section" id="deep-result-section" hidden>
               <div class="review-heading">
                 <div>
-                  <span>云端深度审查</span>
-                  <h3 id="deep-result-verdict">等待审查</h3>
+                  <span data-i18n="audit.cloud">云端深度审查</span>
+                  <h3 id="deep-result-verdict" data-i18n="audit.waitingCloud">等待审查</h3>
                 </div>
-                <span class="verdict-badge" id="deep-result-badge">未运行</span>
+                <span class="verdict-badge" id="deep-result-badge" data-i18n="common.notRun">未运行</span>
               </div>
               <p id="deep-result-summary"></p>
               <div class="deep-result-meta" id="deep-result-meta"></div>
@@ -262,23 +259,23 @@
 
             <section class="finding-section">
               <div class="review-section-title">
-                <span>发现与证据</span><strong id="finding-count">0</strong>
+                <span data-i18n="audit.findings">发现与证据</span><strong id="finding-count">0</strong>
               </div>
               <div class="finding-list" id="finding-list"></div>
             </section>
 
             <section class="diff-section">
               <div class="review-section-title">
-                <span>版本差异</span><strong id="diff-count">0</strong>
+                <span data-i18n="audit.diff">版本差异</span><strong id="diff-count">0</strong>
               </div>
-              <div class="diff-empty" id="diff-empty">尚未修改</div>
+              <div class="diff-empty" id="diff-empty" data-i18n="audit.notModified">尚未修改</div>
               <div class="diff-view" id="diff-view" hidden>
                 <div class="diff-column removed">
-                  <span>修改前</span>
+                  <span data-i18n="audit.before">修改前</span>
                   <pre id="diff-before"></pre>
                 </div>
                 <div class="diff-column added">
-                  <span>草稿</span>
+                  <span data-i18n="audit.draft">草稿</span>
                   <pre id="diff-after"></pre>
                 </div>
               </div>
@@ -288,116 +285,116 @@
       </div>
     </dialog>
 
-    <dialog class="modal candidate-intake-dialog" id="candidate-intake-dialog">
+    <dialog class="modal candidate-intake-dialog" id="candidate-intake-dialog" aria-labelledby="candidate-intake-title">
       <form class="modal-shell" id="candidate-intake-form">
         <div class="modal-header">
           <div>
-            <span class="modal-kicker">导入单个 Skill</span>
-            <h2>选择来源</h2>
+            <span class="modal-kicker" data-i18n="candidate.intakeKicker">导入单个 Skill</span>
+            <h2 id="candidate-intake-title" data-i18n="candidate.chooseSource">选择来源</h2>
           </div>
-          <button class="icon-button compact" id="close-candidate-intake" type="button" aria-label="关闭" title="关闭">
+          <button class="icon-button compact" id="close-candidate-intake" type="button" aria-label="关闭" title="关闭" data-i18n-aria-label="common.close" data-i18n-title="common.close">
             <i data-lucide="x"></i>
           </button>
         </div>
-        <div class="segmented-control candidate-source-control" role="tablist" aria-label="Skill 来源">
-          <button class="is-active" id="candidate-github-mode" type="button" role="tab" aria-selected="true">
+        <div class="segmented-control candidate-source-control" role="tablist" aria-label="Skill 来源" data-i18n-aria-label="candidate.sourceLabel">
+          <button class="is-active" id="candidate-github-mode" type="button" role="tab" aria-controls="candidate-github-field" aria-selected="true">
             <i data-lucide="github"></i><span>GitHub</span>
           </button>
-          <button id="candidate-local-mode" type="button" role="tab" aria-selected="false">
-            <i data-lucide="folder-open"></i><span>本地文件夹</span>
+          <button id="candidate-local-mode" type="button" role="tab" aria-controls="candidate-local-field" aria-selected="false">
+            <i data-lucide="folder-open"></i><span data-i18n="candidate.localFolder">本地文件夹</span>
           </button>
         </div>
         <label class="candidate-input-field" id="candidate-github-field">
-          <span>公开 GitHub 地址</span>
+          <span data-i18n="candidate.githubUrl">公开 GitHub 地址</span>
           <input id="candidate-github-url" type="url" placeholder="https://github.com/owner/repo/tree/main/skill" autocomplete="url" />
         </label>
         <div class="candidate-input-field" id="candidate-local-field" hidden>
-          <span>Skill 文件夹</span>
+          <span data-i18n="candidate.folder">Skill 文件夹</span>
           <div class="candidate-path-picker">
             <code id="candidate-local-path">尚未选择文件夹</code>
             <button class="secondary-button" id="choose-candidate-folder" type="button">
-              <i data-lucide="folder-open"></i><span>选择文件夹</span>
+              <i data-lucide="folder-open"></i><span data-i18n="candidate.chooseFolder">选择文件夹</span>
             </button>
           </div>
         </div>
-        <p class="candidate-intake-note">内容只会暂存到应用缓存并进行本地检查，不会安装或运行其中的文件。</p>
+        <p class="candidate-intake-note" data-i18n="candidate.intakeNote">内容只会暂存到应用缓存并进行本地检查，不会安装或运行其中的文件。</p>
         <div class="modal-footer">
-          <button class="secondary-button" id="cancel-candidate-intake" type="button">取消</button>
+          <button class="secondary-button" id="cancel-candidate-intake" type="button" data-i18n="common.cancel">取消</button>
           <button class="primary-button" id="stage-candidate-button" type="submit">
-            <i data-lucide="scan-search"></i><span>暂存并审查</span>
+            <i data-lucide="scan-search"></i><span data-i18n="candidate.stageReview">暂存并审查</span>
           </button>
         </div>
       </form>
     </dialog>
 
-    <dialog class="workspace-dialog candidate-review-dialog" id="candidate-review-dialog">
+    <dialog class="workspace-dialog candidate-review-dialog" id="candidate-review-dialog" aria-labelledby="candidate-review-title">
       <div class="workspace-shell">
         <header class="workspace-header">
           <div class="workspace-title">
-            <button class="icon-button" id="close-candidate-review" type="button" aria-label="关闭候选审查" title="关闭">
+            <button class="icon-button" id="close-candidate-review" type="button" aria-label="关闭候选审查" title="关闭" data-i18n-aria-label="common.close" data-i18n-title="common.close">
               <i data-lucide="x"></i>
             </button>
             <div>
-              <span class="workspace-kicker">导入前审查</span>
-              <h2 id="candidate-review-title">待导入 Skill</h2>
+              <span class="workspace-kicker" data-i18n="candidate.reviewKicker">导入前审查</span>
+              <h2 id="candidate-review-title" data-i18n="candidate.pending">待导入 Skill</h2>
             </div>
-            <span class="draft-status" id="candidate-review-state">临时暂存</span>
+            <span class="draft-status" id="candidate-review-state" data-i18n="candidate.temporary">临时暂存</span>
           </div>
           <div class="workspace-actions candidate-review-actions">
-            <span class="candidate-no-install"><i data-lucide="shield-check"></i>尚未安装</span>
+            <span class="candidate-no-install"><i data-lucide="shield-check"></i><span data-i18n="candidate.notInstalled">尚未安装</span></span>
             <button class="secondary-button" id="candidate-deep-audit-button" type="button">
-              <i data-lucide="cloud-upload"></i><span>深度审查</span>
+              <i data-lucide="cloud-upload"></i><span data-i18n="editor.deepAudit">深度审查</span>
             </button>
             <button class="primary-button" id="install-candidate-button" type="button">
-              <i data-lucide="package-check"></i><span>安装 Skill</span>
+              <i data-lucide="package-check"></i><span data-i18n="candidate.install">安装 Skill</span>
             </button>
           </div>
         </header>
 
         <div class="candidate-review-body">
-          <section class="candidate-evidence-pane" aria-label="候选文件与来源">
+          <section class="candidate-evidence-pane" aria-label="候选文件与来源" data-i18n-aria-label="candidate.fileSourceLabel">
             <section class="candidate-section candidate-source-section">
-              <div class="review-section-title"><span>来源与版本</span></div>
+              <div class="review-section-title"><span data-i18n="candidate.sourceVersion">来源与版本</span></div>
               <dl class="candidate-source-list" id="candidate-source-list"></dl>
             </section>
 
             <section class="candidate-section">
-              <div class="review-section-title"><span>Codex 兼容性</span><strong id="candidate-compatibility-status">检查中</strong></div>
+              <div class="review-section-title"><span data-i18n="candidate.compatibility">Codex 兼容性</span><strong id="candidate-compatibility-status">检查中</strong></div>
               <p class="candidate-compatibility-summary" id="candidate-compatibility-summary"></p>
               <div class="candidate-compatibility-list" id="candidate-compatibility-list"></div>
             </section>
 
             <section class="candidate-section candidate-files-section">
-              <div class="review-section-title"><span>暂存文件</span><strong id="candidate-file-count">0</strong></div>
+              <div class="review-section-title"><span data-i18n="candidate.stagedFiles">暂存文件</span><strong id="candidate-file-count">0</strong></div>
               <div class="candidate-files" id="candidate-files"></div>
             </section>
 
-            <section class="candidate-preview-section" aria-label="候选文件预览">
-              <div class="review-section-title"><span id="candidate-preview-title">文件预览</span><span id="candidate-preview-meta"></span></div>
-              <div class="candidate-preview-empty" id="candidate-preview-empty">选择一个文件以查看暂存内容。</div>
+            <section class="candidate-preview-section" aria-label="候选文件预览" data-i18n-aria-label="candidate.filePreview">
+              <div class="review-section-title"><span id="candidate-preview-title" data-i18n="candidate.filePreview">文件预览</span><span id="candidate-preview-meta"></span></div>
+              <div class="candidate-preview-empty" id="candidate-preview-empty" data-i18n="candidate.previewPrompt">选择一个文件以查看暂存内容。</div>
               <pre class="candidate-file-preview" id="candidate-file-preview" hidden></pre>
             </section>
           </section>
 
-          <aside class="review-pane candidate-review-pane" aria-label="候选审查结果">
+          <aside class="review-pane candidate-review-pane" aria-label="候选审查结果" data-i18n-aria-label="candidate.reviewLabel">
             <section class="verdict-section">
               <div class="review-heading">
                 <div>
-                  <span>基础检查结论</span>
-                  <h3 id="candidate-audit-verdict">正在检查</h3>
+                  <span data-i18n="candidate.baselineConclusion">基础检查结论</span>
+                  <h3 id="candidate-audit-verdict" data-i18n="common.checking">正在检查</h3>
                 </div>
-                <span class="verdict-badge is-loading" id="candidate-audit-badge">检查中</span>
+                <span class="verdict-badge is-loading" id="candidate-audit-badge" data-i18n="audit.inProgress">检查中</span>
               </div>
-              <p id="candidate-audit-summary">正在读取暂存的 SKILL.md。</p>
+              <p id="candidate-audit-summary" data-i18n="candidate.readingSkill">正在读取暂存的 SKILL.md。</p>
             </section>
 
             <section class="deep-result-section" id="candidate-deep-result-section" hidden>
               <div class="review-heading">
                 <div>
-                  <span>云端深度审查</span>
-                  <h3 id="candidate-deep-result-verdict">等待审查</h3>
+                  <span data-i18n="audit.cloud">云端深度审查</span>
+                  <h3 id="candidate-deep-result-verdict" data-i18n="audit.waitingCloud">等待审查</h3>
                 </div>
-                <span class="verdict-badge" id="candidate-deep-result-badge">未运行</span>
+                <span class="verdict-badge" id="candidate-deep-result-badge" data-i18n="common.notRun">未运行</span>
               </div>
               <p id="candidate-deep-result-summary"></p>
               <div class="deep-result-meta" id="candidate-deep-result-meta"></div>
@@ -405,12 +402,12 @@
             </section>
 
             <section class="finding-section">
-              <div class="review-section-title"><span>发现与证据</span><strong id="candidate-finding-count">0</strong></div>
+              <div class="review-section-title"><span data-i18n="audit.findings">发现与证据</span><strong id="candidate-finding-count">0</strong></div>
               <div class="finding-list" id="candidate-finding-list"></div>
             </section>
 
             <section class="candidate-skipped-section">
-              <div class="review-section-title"><span>未纳入的条目</span><strong id="candidate-skipped-count">0</strong></div>
+              <div class="review-section-title"><span data-i18n="candidate.skipped">未纳入的条目</span><strong id="candidate-skipped-count">0</strong></div>
               <p id="candidate-skipped-summary"></p>
               <div id="candidate-skipped-list"></div>
             </section>
@@ -419,14 +416,14 @@
       </div>
     </dialog>
 
-    <dialog class="modal bundle-export-dialog" id="bundle-export-dialog">
+    <dialog class="modal bundle-export-dialog" id="bundle-export-dialog" aria-labelledby="bundle-export-title">
       <form class="modal-shell" id="bundle-export-form">
         <div class="modal-header">
           <div>
             <span class="modal-kicker">Skill Bundle</span>
-            <h2>导出个人 Skills</h2>
+            <h2 id="bundle-export-title" data-i18n="bundle.exportTitle">导出个人 Skills</h2>
           </div>
-          <button class="icon-button compact" id="close-bundle-export" type="button" aria-label="关闭" title="关闭">
+          <button class="icon-button compact" id="close-bundle-export" type="button" aria-label="关闭" title="关闭" data-i18n-aria-label="common.close" data-i18n-title="common.close">
             <i data-lucide="x"></i>
           </button>
         </div>
@@ -434,7 +431,7 @@
         <div class="bundle-export-toolbar">
           <label class="bundle-select-all">
             <input id="bundle-select-all" type="checkbox" />
-            <span>选择全部</span>
+            <span data-i18n="bundle.selectAll">选择全部</span>
           </label>
           <span id="bundle-selection-count">0 项</span>
         </div>
@@ -443,180 +440,180 @@
         <section class="bundle-export-review" id="bundle-export-review" hidden>
           <dl class="bundle-export-summary">
             <div><dt>Skills</dt><dd id="bundle-export-skill-count">0</dd></div>
-            <div><dt>文件</dt><dd id="bundle-export-file-count">0</dd></div>
-            <div><dt>内容大小</dt><dd id="bundle-export-byte-count">0 B</dd></div>
+            <div><dt data-i18n="common.files">文件</dt><dd id="bundle-export-file-count">0</dd></div>
+            <div><dt data-i18n="bundle.contentSize">内容大小</dt><dd id="bundle-export-byte-count">0 B</dd></div>
           </dl>
           <div class="bundle-export-blocks" id="bundle-export-blocks" hidden></div>
           <p class="bundle-export-warning">
             <i data-lucide="lock-open"></i>
-            <span>Bundle 不加密。确定性检查不能证明其中不存在其他秘密。</span>
+            <span data-i18n="bundle.unencrypted">Bundle 不加密。确定性检查不能证明其中不存在其他秘密。</span>
           </p>
           <div class="bundle-export-receipt" id="bundle-export-receipt" hidden>
-            <div><span>保存位置</span><code id="bundle-receipt-destination"></code></div>
+            <div><span data-i18n="bundle.destination">保存位置</span><code id="bundle-receipt-destination"></code></div>
             <div><span>Bundle revision</span><code id="bundle-receipt-revision"></code></div>
             <dl>
               <div><dt>Skills</dt><dd id="bundle-receipt-skill-count">0</dd></div>
-              <div><dt>文件</dt><dd id="bundle-receipt-file-count">0</dd></div>
-              <div><dt>归档大小</dt><dd id="bundle-receipt-byte-count">0 B</dd></div>
+              <div><dt data-i18n="common.files">文件</dt><dd id="bundle-receipt-file-count">0</dd></div>
+              <div><dt data-i18n="bundle.archiveSize">归档大小</dt><dd id="bundle-receipt-byte-count">0 B</dd></div>
             </dl>
             <section class="server-install-handoff" aria-labelledby="server-install-heading">
               <div>
-                <strong id="server-install-heading">传到 Linux 服务器后</strong>
-                <span>在服务器的 Codex 中粘贴这段指令。</span>
+                <strong id="server-install-heading" data-i18n="bundle.serverHeading">传到 Linux 服务器后</strong>
+                <span data-i18n="bundle.serverHelp">在服务器的 Codex 中粘贴这段指令。</span>
               </div>
               <pre id="server-install-prompt"></pre>
               <button class="secondary-button" id="copy-server-install-prompt" type="button">
-                <i data-lucide="copy"></i><span>复制服务器安装指令</span>
+                <i data-lucide="copy"></i><span data-i18n="bundle.copyServerPrompt">复制服务器安装指令</span>
               </button>
             </section>
           </div>
         </section>
 
         <div class="modal-footer bundle-export-footer">
-          <button class="secondary-button" id="cancel-bundle-export" type="button">取消</button>
+          <button class="secondary-button" id="cancel-bundle-export" type="button" data-i18n="common.cancel">取消</button>
           <button class="secondary-button" id="preview-bundle-export" type="submit">
-            <i data-lucide="list-checks"></i><span>检查导出内容</span>
+            <i data-lucide="list-checks"></i><span data-i18n="bundle.previewExport">检查导出内容</span>
           </button>
           <button class="primary-button" id="apply-bundle-export" type="button" disabled>
-            <i data-lucide="download"></i><span>选择位置并导出</span>
+            <i data-lucide="download"></i><span data-i18n="bundle.chooseExport">选择位置并导出</span>
           </button>
         </div>
       </form>
     </dialog>
 
-    <dialog class="workspace-dialog bundle-import-dialog" id="bundle-import-dialog">
+    <dialog class="workspace-dialog bundle-import-dialog" id="bundle-import-dialog" aria-labelledby="bundle-import-title">
       <div class="workspace-shell">
         <header class="workspace-header">
           <div class="workspace-title">
-            <button class="icon-button" id="close-bundle-import" type="button" aria-label="关闭导入审查" title="关闭">
+            <button class="icon-button" id="close-bundle-import" type="button" aria-label="关闭导入审查" title="关闭" data-i18n-title="common.close">
               <i data-lucide="x"></i>
             </button>
             <div>
-              <span class="workspace-kicker">Bundle Import</span>
-              <h2 id="bundle-import-title">已验证，尚未安装</h2>
+              <span class="workspace-kicker" data-i18n="bundle.importKicker">Bundle Import</span>
+              <h2 id="bundle-import-title" data-i18n="bundle.importVerified">已验证，尚未安装</h2>
             </div>
-            <span class="draft-status" id="bundle-import-phase">暂存</span>
+            <span class="draft-status" id="bundle-import-phase" data-i18n="bundle.staged">暂存</span>
           </div>
           <div class="workspace-actions">
-            <span class="candidate-no-install" id="bundle-import-mutation-state"><i data-lucide="shield-check"></i>未安装</span>
+            <span class="candidate-no-install" id="bundle-import-mutation-state"><i data-lucide="shield-check"></i><span data-i18n="bundle.notInstalled">未安装</span></span>
           </div>
         </header>
         <div class="bundle-import-body">
           <section class="bundle-import-evidence">
             <dl class="bundle-import-source" id="bundle-import-source"></dl>
             <div class="bundle-install-results" id="bundle-install-results" role="status" aria-live="polite" hidden></div>
-            <div class="review-section-title"><span>包内 Skill</span><strong id="bundle-import-skill-count">0</strong></div>
+            <div class="review-section-title"><span data-i18n="bundle.skillsInside">包内 Skill</span><strong id="bundle-import-skill-count">0</strong></div>
             <div class="bundle-import-skill-list" id="bundle-import-skill-list"></div>
           </section>
           <aside class="bundle-import-preview">
-            <div class="review-section-title"><span id="bundle-import-preview-title">文件预览</span></div>
-            <p class="candidate-preview-empty" id="bundle-import-preview-empty">选择一个文件以查看已验证暂存内容。</p>
+            <div class="review-section-title"><span id="bundle-import-preview-title" data-i18n="candidate.filePreview">文件预览</span></div>
+            <p class="candidate-preview-empty" id="bundle-import-preview-empty" data-i18n="bundle.previewPrompt">选择一个文件以查看已验证暂存内容。</p>
             <pre class="candidate-file-preview" id="bundle-import-file-preview" hidden></pre>
             <pre class="candidate-file-preview bundle-import-current-preview" id="bundle-import-current-file-preview" hidden></pre>
           </aside>
         </div>
         <footer class="workspace-footer">
-          <span id="bundle-import-status" role="status" aria-live="polite">内容已验证并暂存到应用缓存。</span>
+          <span id="bundle-import-status" role="status" aria-live="polite" data-i18n="bundle.stagedStatus">内容已验证并暂存到应用缓存。</span>
           <div class="bundle-import-footer-actions">
-            <button class="secondary-button" id="discard-bundle-import" type="button">放弃暂存</button>
+            <button class="secondary-button" id="discard-bundle-import" type="button" data-i18n="bundle.discard">放弃暂存</button>
             <button class="primary-button" id="install-bundle-skills" type="button" disabled hidden>
-              <i data-lucide="download"></i><span>复核安装</span>
+              <i data-lucide="download"></i><span data-i18n="bundle.reviewInstall">复核安装</span>
             </button>
           </div>
         </footer>
       </div>
     </dialog>
 
-    <dialog class="modal" id="settings-dialog">
+    <dialog class="modal" id="settings-dialog" aria-labelledby="settings-title">
       <form class="modal-shell" id="settings-form">
         <div class="modal-header">
           <div>
             <span class="modal-kicker">Agent Skill Studio</span>
-            <h2>设置</h2>
+            <h2 id="settings-title" data-i18n="settings.title">设置</h2>
           </div>
-          <button class="icon-button compact" id="close-settings" type="button" aria-label="关闭" title="关闭">
+          <button class="icon-button compact" id="close-settings" type="button" aria-label="关闭" title="关闭" data-i18n-aria-label="common.close" data-i18n-title="common.close">
             <i data-lucide="x"></i>
           </button>
         </div>
-        <h3 class="settings-section-title">深度审查</h3>
+        <h3 class="settings-section-title" data-i18n="settings.deepAudit">深度审查</h3>
         <div class="form-grid provider-form-grid">
           <label class="full">
-            <span>API 模式</span>
+            <span data-i18n="settings.apiMode">API 模式</span>
             <select id="deep-audit-api-mode">
               <option value="chatCompletions">Chat Completions</option>
               <option value="responses">Responses</option>
             </select>
           </label>
           <label class="full">
-            <span>OpenAI-compatible API Base URL</span>
+            <span data-i18n="settings.baseUrl">OpenAI-compatible API Base URL</span>
             <input id="deep-audit-endpoint" type="url" placeholder="https://api.openai.com/v1" autocomplete="url" required />
           </label>
           <label class="full">
-            <span>模型</span>
-            <input id="deep-audit-model" type="text" placeholder="模型名称" autocomplete="off" required />
+            <span data-i18n="common.model">模型</span>
+            <input id="deep-audit-model" type="text" placeholder="模型名称" data-i18n-placeholder="settings.modelPlaceholder" autocomplete="off" required />
           </label>
           <label class="full">
-            <span>API key</span>
+            <span data-i18n="settings.apiKey">API key</span>
             <input id="deep-audit-api-key" type="password" autocomplete="new-password" />
           </label>
         </div>
         <p class="credential-state" id="deep-audit-credential-state"></p>
         <p class="connection-status" id="deep-audit-connection-status" role="status" aria-live="polite" hidden></p>
         <div class="modal-footer split-footer">
-          <button class="secondary-button destructive-text" id="clear-deep-audit-settings" type="button">移除配置</button>
+          <button class="secondary-button destructive-text" id="clear-deep-audit-settings" type="button" data-i18n="settings.remove">移除配置</button>
           <span></span>
           <button class="secondary-button" id="test-deep-audit-connection" type="button">
-            <i data-lucide="plug-zap"></i><span>测试连接</span>
+            <i data-lucide="plug-zap"></i><span data-i18n="settings.test">测试连接</span>
           </button>
-          <button class="secondary-button" id="cancel-settings" type="button">取消</button>
-          <button class="primary-button" id="save-deep-audit-settings" type="submit">存储到 Keychain</button>
+          <button class="secondary-button" id="cancel-settings" type="button" data-i18n="common.cancel">取消</button>
+          <button class="primary-button" id="save-deep-audit-settings" type="submit" data-i18n="settings.saveAction">保存配置</button>
         </div>
       </form>
     </dialog>
 
-    <dialog class="modal deep-consent-dialog" id="deep-audit-consent-dialog">
+    <dialog class="modal deep-consent-dialog" id="deep-audit-consent-dialog" aria-labelledby="deep-consent-title">
       <form class="modal-shell" id="deep-audit-consent-form">
         <div class="modal-header">
           <div>
-            <span class="modal-kicker">发送前确认</span>
-            <h2>选择离开本机的文件</h2>
+            <span class="modal-kicker" data-i18n="consent.kicker">发送前确认</span>
+            <h2 id="deep-consent-title" data-i18n="consent.title">选择离开本机的文件</h2>
           </div>
-          <button class="icon-button compact" id="close-deep-audit-consent" type="button" aria-label="关闭" title="关闭">
+          <button class="icon-button compact" id="close-deep-audit-consent" type="button" aria-label="关闭" title="关闭" data-i18n-aria-label="common.close" data-i18n-title="common.close">
             <i data-lucide="x"></i>
           </button>
         </div>
         <dl class="provider-summary">
-          <div><dt>API 模式</dt><dd id="deep-consent-api-mode"></dd></div>
-          <div><dt>API 地址</dt><dd id="deep-consent-endpoint"></dd></div>
-          <div><dt>模型</dt><dd id="deep-consent-model"></dd></div>
-          <div><dt>请求</dt><dd id="deep-consent-requests"></dd></div>
+          <div><dt data-i18n="settings.apiMode">API 模式</dt><dd id="deep-consent-api-mode"></dd></div>
+          <div><dt data-i18n="consent.apiAddress">API 地址</dt><dd id="deep-consent-endpoint"></dd></div>
+          <div><dt data-i18n="common.model">模型</dt><dd id="deep-consent-model"></dd></div>
+          <div><dt data-i18n="common.requests">请求</dt><dd id="deep-consent-requests"></dd></div>
         </dl>
         <div class="consent-file-list" id="deep-consent-files"></div>
         <details class="skipped-files" id="deep-skipped-files" hidden>
-          <summary id="deep-skipped-summary">未上传文件</summary>
+          <summary id="deep-skipped-summary" data-i18n="consent.notUploadedDefault">未上传文件</summary>
           <div id="deep-skipped-list"></div>
         </details>
         <div class="modal-footer">
-          <button class="secondary-button" id="cancel-deep-audit-consent" type="button">取消</button>
+          <button class="secondary-button" id="cancel-deep-audit-consent" type="button" data-i18n="common.cancel">取消</button>
           <button class="primary-button" id="run-deep-audit" type="submit">
-            <i data-lucide="cloud-upload"></i><span>确认发送并审查</span>
+            <i data-lucide="cloud-upload"></i><span data-i18n="consent.run">确认发送并审查</span>
           </button>
         </div>
       </form>
     </dialog>
 
-    <dialog class="modal compact-modal" id="confirm-dialog">
+    <dialog class="modal compact-modal" id="confirm-dialog" aria-labelledby="confirm-title" aria-describedby="confirm-message">
       <form method="dialog" class="modal-shell" id="confirm-form">
         <div class="confirm-icon"><i data-lucide="circle-alert"></i></div>
-        <h2 id="confirm-title">确认操作</h2>
+        <h2 id="confirm-title" data-i18n="confirm.title">确认操作</h2>
         <p id="confirm-message"></p>
         <label class="confirm-name-field" id="confirm-name-field" hidden>
-          <span>输入 Skill 名称以确认</span>
+          <span data-i18n="confirm.typeName">输入 Skill 名称以确认</span>
           <input id="confirm-name" type="text" autocomplete="off" spellcheck="false" />
         </label>
         <div class="modal-footer">
-          <button class="secondary-button" id="cancel-confirm-button" type="button">取消</button>
-          <button class="danger-button" id="confirm-submit" value="default" type="submit">确认</button>
+          <button class="secondary-button" id="cancel-confirm-button" type="button" data-i18n="common.cancel">取消</button>
+          <button class="danger-button" id="confirm-submit" value="default" type="submit" data-i18n="common.confirm">确认</button>
         </div>
       </form>
     </dialog>

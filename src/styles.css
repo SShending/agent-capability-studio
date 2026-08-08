@@ -64,8 +64,8 @@ input:focus-visible,
 select:focus-visible,
 textarea:focus-visible,
 summary:focus-visible {
-  outline: 3px solid rgba(47, 111, 189, 0.22);
-  outline-offset: 2px;
+  outline: 3px solid var(--blue);
+  outline-offset: 3px;
 }
 
 svg {
@@ -137,7 +137,7 @@ svg {
   line-height: 16px;
 }
 
-.local-status span {
+.local-status .status-dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
@@ -1932,7 +1932,7 @@ button,
   line-height: 14px;
 }
 
-.local-status span {
+.local-status .status-dot {
   width: 5px;
   height: 5px;
   background: #30d158;
@@ -2145,8 +2145,8 @@ input:focus-visible,
 select:focus-visible,
 textarea:focus-visible,
 summary:focus-visible {
-  outline: 3px solid rgba(0, 122, 255, 0.28);
-  outline-offset: 1px;
+  outline: 3px solid var(--blue);
+  outline-offset: 3px;
 }
 
 .toolbar {
@@ -2789,6 +2789,16 @@ summary:focus-visible {
 
 .provider-form-grid {
   grid-template-columns: 1fr;
+}
+
+.settings-general-grid {
+  grid-template-columns: 1fr;
+  margin-bottom: 18px;
+}
+
+.settings-provider-title {
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
 }
 
 .settings-section-title {

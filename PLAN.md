@@ -3,17 +3,19 @@
 ## Current Position
 
 - Active phase: Phase 5 public v0.1 release
-- Current task: 5.1 complete accessibility, dark-mode, native-window visual QA,
-  and interface localization
-- Next task: 5.2 add CI, release metadata, signing, notarization, and packaging
-- Last accepted milestone: Task 4.5 trusted server-installation handoff,
-  accepted by the owner on 2026-08-06
+- Current task: 5.2 add CI, release metadata, signing, notarization, and packaging
+- Next task: 5.3 reconcile public documentation, screenshots, and limitations
+- Last accepted milestone: Task 5.1 accessibility, appearance, localization,
+  native menu, and passwordless local credential storage, accepted by the owner
+  on 2026-08-08
 - Blocking decision: none; the owner simplified server migration on 2026-08-06
   to direct Codex-assisted installation of a trusted Mac export, with no custom
   headless Bundle CLI or repeated semantic audit
 - Validation item: confirm the final minimum macOS version before public release
 - Outstanding acceptance: Task 4.6 real Mac-to-Linux migration remains a
   release gate; it has not been marked complete without a real server result
+- Human validation: Task 5.1 passed first-user native-window acceptance on
+  2026-08-08
 
 ## Phase 1 - Native Desktop Vertical Slice
 
@@ -160,7 +162,7 @@ Acceptance:
 
 Tasks:
 
-- [ ] 5.1 Complete accessibility, dark-mode, native-window visual QA, and real
+- [x] 5.1 Complete accessibility, dark-mode, native-window visual QA, and real
   Simplified Chinese/English localization with a persistent interface-language
   setting. Do not expose a language selector until all common-path strings and
   error messages switch consistently.

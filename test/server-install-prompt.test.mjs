@@ -22,3 +22,13 @@ test("trusted migration prompt skips repeated audit and prevents silent overwrit
   assert.match(prompt, /内容相同.*跳过/);
   assert.match(prompt, /内容不同.*询问我.*不要覆盖/);
 });
+
+test("trusted migration prompt follows the selected interface language", () => {
+  const prompt = serverInstallPrompt("/tmp/codex-skills.skillbundle", "en");
+
+  assert.match(prompt, /trusted Bundle/);
+  assert.match(prompt, /Do not repeat the semantic security audit/);
+  assert.match(prompt, /do not run its scripts/);
+  assert.match(prompt, /identical content/);
+  assert.match(prompt, /ask me before replacing/);
+});
