@@ -35,9 +35,79 @@ local directory.
 _Avoid_: Download, package
 
 **Candidate Source**:
-The public GitHub location or user-selected local directory from which one
-Candidate Skill revision is obtained.
+The public GitHub location or user-selected local directory from which one or
+more Candidate Skill revisions may be obtained.
 _Avoid_: Install source, managed Skill root
+
+**Candidate Repository**:
+A public GitHub repository that may contain one or more discoverable Candidate
+Skills at one immutable revision.
+_Avoid_: Marketplace, Skill Bundle, installation source
+
+**Requested Repository Ref**:
+The optional branch, tag, or commit named by a Repository Intake request. It is an
+untrusted request and is not revision evidence until resolved.
+_Avoid_: Resolved revision, candidate hash
+
+**Resolved Repository Revision**:
+The immutable commit SHA to which one Repository Candidate Listing and its
+Review Queue are bound.
+_Avoid_: Requested ref, latest version, moving branch
+
+**Repository Intake**:
+A non-mutating workflow that resolves a Candidate Repository to an immutable
+revision, lists its discoverable Candidate Skills, and lets the user select
+which ones to stage for inspection. It does not audit or install every listed
+Skill automatically.
+_Avoid_: Repository installation, bulk install, clone
+
+**Discoverable Candidate Skill**:
+A Candidate Skill represented by `SKILL.md` at the Candidate Repository root,
+`skills/<skill>/SKILL.md`, or `skills/<category>/<skill>/SKILL.md`. These are
+separate candidates; deeper arbitrary recursive matches are not discoverable.
+_Avoid_: Every `SKILL.md` match, test fixture, example Skill
+
+**Repository Review Queue**:
+The selected Candidate Skills from one Repository Intake, each with its own
+staging, Baseline Audit, comparison, and installation state. Entries remain
+unstaged until the user opens them; queue membership does not download content
+or grant a batch Installation Confirmation.
+_Avoid_: Bulk installer, installation batch, repository install
+
+**Repository Intake Session**:
+The resumable metadata for one Repository Intake: public source, Resolved
+Repository Revision, selected paths, and current queue position. It does not
+persist staged candidate files, Diff, or Audit Results across app restarts.
+_Avoid_: Candidate cache, audit report, installation history
+
+**Repository Candidate Listing**:
+A revision-bound list of discoverable Skill directory names and paths obtained
+from repository metadata without downloading their Skill contents. A listing
+entry is not yet a Staged Candidate or an Audit Result.
+_Avoid_: Candidate Manifest, repository scan, installed catalog
+
+**Management Source**:
+The Agent-managed location and lifecycle state in which a Skill currently
+exists: personal, disabled, system, plugin, or archive.
+_Avoid_: Acquisition source, repository
+
+**Acquisition Provenance**:
+A Studio-recorded account of where one installed Skill was obtained, including
+an exact GitHub revision or a user-selected local source when known.
+_Avoid_: Management source, inferred repository, ownership
+
+**Provenance Confidence**:
+The evidence level attached to Acquisition Provenance: recorded when the Studio
+observed the exact installation revision, confirmed when repository origin is
+supported but the exact revision is unknown, or unknown when no trustworthy
+origin evidence exists.
+_Avoid_: Safety confidence, repository popularity
+
+**Unknown Provenance**:
+The honest classification for a Skill whose acquisition history was not
+recorded by a trusted Studio workflow. It must not be reconstructed by guessing
+from content, names, or URLs mentioned inside the Skill.
+_Avoid_: Local Skill, untrusted Skill
 
 **Staged Candidate**:
 A temporary, contained snapshot of one Candidate Skill prepared for inspection

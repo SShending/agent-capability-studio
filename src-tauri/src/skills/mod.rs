@@ -2,12 +2,16 @@ mod audit;
 mod bundle_export;
 mod bundle_install;
 mod candidate;
+mod collections;
 mod deep_audit;
+mod directory_replace;
 // v0.1 defines and tests this seam before any maintained scanner is registered.
 mod bundle_import;
 #[allow(dead_code)]
 mod external_scanner;
 mod lifecycle;
+mod package;
+mod provenance;
 
 pub use bundle_export::{BundleExportError, BundleExportPlan, BundleExportReceipt};
 pub use bundle_import::{BundleImportError, BundleImportFileContent, BundleImportManager};
@@ -17,13 +21,21 @@ pub use bundle_install::{
 };
 pub use candidate::{
     CandidateError, CandidateFileContent, CandidateInstallError, CandidateInstallPreview,
-    CandidateInstallResult, CandidateManifest, CandidateReview, CandidateStager,
+    CandidateInstallResult, CandidateManifest, CandidateReview, CandidateSource, CandidateStager,
+    GithubRepositoryListing, GithubUpdateCheck, GithubUpdateError,
 };
+pub use collections::{CollectionManager, CollectionSnapshot, CollectionsError};
 pub use deep_audit::{
     DeepAuditApiMode, DeepAuditConnectionResult, DeepAuditError, DeepAuditManager,
     DeepAuditPreview, DeepAuditResult, DeepAuditSelection, DeepAuditSettings,
 };
 pub use lifecycle::{DeleteSkillResult, LifecyclePreview, LifecycleResult};
+pub(crate) use package::CandidateFileSyncOperation;
+pub use package::{
+    CandidateFileSyncAction, PackageFileContent, PackageImportSource, PackageMutation,
+    PackagePreview, PackageSaveResult, PackageSnapshot,
+};
+pub use provenance::{AcquisitionProvenance, ProvenanceError, ProvenanceManager};
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use chrono::{DateTime, Utc};
@@ -32,6 +44,7 @@ use sha2::{Digest, Sha256};
 use std::{
     collections::HashMap,
     env,
+    ffi::OsStr,
     fs::{self},
     io::Write,
     path::{Path, PathBuf},
@@ -46,6 +59,16 @@ use thiserror::Error;
 
 const MAX_DRAFT_BYTES: usize = 64 * 1024;
 const MAX_SCAN_DEPTH: usize = 8;
+
+pub(super) fn is_ignored_skill_metadata_name(name: &OsStr) -> bool {
+    name == OsStr::new(".DS_Store")
+}
+
+pub(super) fn is_ignored_skill_metadata_path(path: &str) -> bool {
+    Path::new(path)
+        .components()
+        .any(|component| component.as_os_str() == OsStr::new(".DS_Store"))
+}
 
 #[derive(Debug, Error)]
 pub enum WorkspaceError {
@@ -65,6 +88,10 @@ pub enum WorkspaceError {
     NameConflict { name: String, source_label: String },
     #[error("This Skill lifecycle action is not recognized.")]
     InvalidLifecycleAction,
+    #[error("The Skill state metadata could not be updated: {0}")]
+    LifecycleMetadata(String),
+    #[error("The Skill state change could not be rolled back completely: {0}")]
+    LifecycleRecoveryFailed(String),
     #[error("This lifecycle action is not allowed for the Skill's current source.")]
     LifecycleNotAllowed,
     #[error("This Skill directory changed after preview. Review the action again.")]
@@ -75,6 +102,18 @@ pub enum WorkspaceError {
     Blocked,
     #[error("Editing linked or escaped Skill files is not supported.")]
     UnsafePath,
+    #[error("The Skill Package path is invalid or escapes the Skill directory.")]
+    InvalidPackagePath,
+    #[error("The Skill Package exceeds the supported file count or size limits.")]
+    PackageTooLarge,
+    #[error("SKILL.md is required at the Package root and cannot be removed or renamed.")]
+    MissingSkillDocument,
+    #[error("The requested Package operation conflicts with an existing file or folder.")]
+    PackagePathConflict,
+    #[error("The requested Package operation is not recognized.")]
+    InvalidPackageOperation,
+    #[error("Binary Skill Package files cannot be edited as text.")]
+    BinaryPackageFile,
     #[error("Unable to access the local Skill workspace: {0}")]
     Io(#[from] std::io::Error),
 }
@@ -89,11 +128,19 @@ impl WorkspaceError {
             Self::PreviewMismatch => "STALE_PREVIEW",
             Self::NameConflict { .. } => "NAME_CONFLICT",
             Self::InvalidLifecycleAction => "INVALID_LIFECYCLE_ACTION",
+            Self::LifecycleMetadata(_) => "LIFECYCLE_METADATA_ERROR",
+            Self::LifecycleRecoveryFailed(_) => "LIFECYCLE_RECOVERY_ERROR",
             Self::LifecycleNotAllowed => "LIFECYCLE_NOT_ALLOWED",
             Self::DirectoryChanged => "STALE_DIRECTORY",
             Self::DeleteConfirmationMismatch => "DELETE_CONFIRMATION_MISMATCH",
             Self::Blocked => "BLOCKING_FINDINGS",
             Self::UnsafePath => "UNSAFE_PATH",
+            Self::InvalidPackagePath => "INVALID_PACKAGE_PATH",
+            Self::PackageTooLarge => "PACKAGE_TOO_LARGE",
+            Self::MissingSkillDocument => "MISSING_SKILL_DOCUMENT",
+            Self::PackagePathConflict => "PACKAGE_PATH_CONFLICT",
+            Self::InvalidPackageOperation => "INVALID_PACKAGE_OPERATION",
+            Self::BinaryPackageFile => "BINARY_PACKAGE_FILE",
             Self::Io(_) => "LOCAL_IO_ERROR",
         }
     }
@@ -120,6 +167,8 @@ struct WorkspaceMetrics {
     directory_revision_nanos: AtomicU64,
     lifecycle_mutations: AtomicU64,
     lifecycle_mutation_nanos: AtomicU64,
+    package_revisions: AtomicU64,
+    package_revision_nanos: AtomicU64,
 }
 
 #[cfg(test)]
@@ -135,6 +184,8 @@ struct MetricsSnapshot {
     directory_revision_nanos: u64,
     lifecycle_mutations: u64,
     lifecycle_mutation_nanos: u64,
+    package_revisions: u64,
+    package_revision_nanos: u64,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
@@ -217,6 +268,7 @@ pub struct SkillSummary {
     pub has_blocking_findings: bool,
     pub has_icon: bool,
     pub brand_color: Option<String>,
+    pub acquisition: AcquisitionProvenance,
 }
 
 #[derive(Debug, Serialize)]
@@ -503,7 +555,7 @@ impl Workspace {
         Self::new(codex_home)
     }
 
-    fn new(codex_home: PathBuf) -> Self {
+    pub(crate) fn new(codex_home: PathBuf) -> Self {
         Self {
             codex_home,
             index: Arc::new(RwLock::new(None)),
@@ -947,6 +999,8 @@ impl Workspace {
                 .metrics
                 .lifecycle_mutation_nanos
                 .load(Ordering::Relaxed),
+            package_revisions: self.metrics.package_revisions.load(Ordering::Relaxed),
+            package_revision_nanos: self.metrics.package_revision_nanos.load(Ordering::Relaxed),
         }
     }
 
@@ -972,7 +1026,9 @@ impl Workspace {
         let mut result = Vec::new();
         for entry in entries.flatten() {
             let name = entry.file_name();
-            if !include_hidden && name.to_string_lossy().starts_with('.') {
+            if is_ignored_skill_metadata_name(&name)
+                || (!include_hidden && name.to_string_lossy().starts_with('.'))
+            {
                 continue;
             }
             if entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false) {
@@ -1006,7 +1062,9 @@ impl Workspace {
         let mut result = Vec::new();
         for entry in entries {
             let name = entry.file_name();
-            if !include_hidden && name.to_string_lossy().starts_with('.') {
+            if is_ignored_skill_metadata_name(&name)
+                || (!include_hidden && name.to_string_lossy().starts_with('.'))
+            {
                 continue;
             }
             let kind = entry.file_type()?;
@@ -1047,7 +1105,7 @@ impl Workspace {
         let mut result = Vec::new();
         for entry in entries {
             let name = entry.file_name();
-            if name == "node_modules" || name == ".git" {
+            if is_ignored_skill_metadata_name(&name) || name == "node_modules" || name == ".git" {
                 continue;
             }
             if entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false) {
@@ -1081,6 +1139,9 @@ impl Workspace {
         };
         let mut has_skill = false;
         for entry in &entries {
+            if is_ignored_skill_metadata_name(&entry.file_name()) {
+                continue;
+            }
             let kind = entry.file_type()?;
             if kind.is_symlink() {
                 return Err(WorkspaceError::UnsafePath);
@@ -1100,7 +1161,7 @@ impl Workspace {
         let mut result = Vec::new();
         for entry in entries {
             let name = entry.file_name();
-            if name == "node_modules" || name == ".git" {
+            if is_ignored_skill_metadata_name(&name) || name == "node_modules" || name == ".git" {
                 continue;
             }
             if entry.file_type()?.is_dir() {
@@ -1218,6 +1279,7 @@ impl Workspace {
             } else {
                 None
             },
+            acquisition: AcquisitionProvenance::unknown(),
         };
         let skill = InternalSkill {
             summary,
@@ -1363,7 +1425,7 @@ fn count_files(root: &Path, depth: usize) -> usize {
         .flatten()
         .map(|entry| {
             let name = entry.file_name();
-            if name == "node_modules" || name == ".git" {
+            if is_ignored_skill_metadata_name(&name) || name == "node_modules" || name == ".git" {
                 return 0;
             }
             let kind = entry.file_type().ok();
@@ -1579,6 +1641,29 @@ mod tests {
             .findings
             .iter()
             .any(|finding| finding.id == "contextual-trigger"));
+    }
+
+    #[test]
+    fn catalog_file_count_ignores_finder_metadata() {
+        let (directory, workspace) = workspace();
+        write_skill(
+            directory.path(),
+            "finder-count",
+            "Use when counting Skill files.",
+            "1. Count the logical files.\n2. Ignore Finder metadata.",
+        );
+        let skill = directory.path().join("skills/finder-count");
+        fs::create_dir_all(skill.join("references")).unwrap();
+        fs::write(skill.join("references/guide.md"), "guide").unwrap();
+        fs::write(skill.join(".DS_Store"), "root").unwrap();
+        fs::write(skill.join("references/.DS_Store"), "nested").unwrap();
+        let catalog = workspace.list_skills().unwrap();
+        let summary = catalog
+            .skills
+            .iter()
+            .find(|skill| skill.name == "finder-count")
+            .unwrap();
+        assert_eq!(summary.file_count, 2);
     }
 
     #[test]

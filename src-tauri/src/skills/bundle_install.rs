@@ -3,7 +3,11 @@ use super::{
         BundleImportManager, BundleImportReview, ImportedSkillReview, MAX_PREVIEW_BYTES,
     },
     candidate::{rename_directory_no_replace, sync_directory},
-    InternalSkill, SkillDetail, Source, Workspace, WorkspaceError,
+    directory_replace::{
+        replace_directory_atomically, ReplacementFailure as CommitFailure,
+        ReplacementNotice as CommitNotice,
+    },
+    is_ignored_skill_metadata_name, InternalSkill, SkillDetail, Source, Workspace, WorkspaceError,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -183,26 +187,6 @@ struct PreparedInstall {
     selection: BundleInstallSelection,
     imported_revision: String,
     temporary: TempDir,
-}
-
-#[derive(Debug, Default)]
-struct CommitNotice {
-    retained_backup: Option<PathBuf>,
-}
-
-#[derive(Debug)]
-struct CommitFailure {
-    error: std::io::Error,
-    retain_prepared_directory: bool,
-}
-
-impl CommitFailure {
-    fn ordinary(error: std::io::Error) -> Self {
-        Self {
-            error,
-            retain_prepared_directory: false,
-        }
-    }
 }
 
 impl BundleImportManager {
@@ -864,6 +848,9 @@ fn collect_catalog_files(
     let mut entries = fs::read_dir(current)?.collect::<Result<Vec<_>, _>>()?;
     entries.sort_by_key(|entry| entry.file_name());
     for entry in entries {
+        if is_ignored_skill_metadata_name(&entry.file_name()) {
+            continue;
+        }
         let path = entry.path();
         let metadata = fs::symlink_metadata(&path)?;
         if metadata.file_type().is_symlink() {
@@ -1116,132 +1103,11 @@ fn replace_personal_directory(
     expected_revision: &str,
 ) -> Result<CommitNotice, CommitFailure> {
     let _ = personal_root;
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
-    {
-        replace_personal_directory_atomic(
-            source,
-            destination,
-            expected_revision,
-            exchange_directories,
-        )
-    }
-
-    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-    {
-        let backup_root = personal_root.parent().unwrap_or(personal_root);
-        let backup = Builder::new()
-            .prefix(".bundle-replaced-")
-            .tempdir_in(backup_root)
-            .map_err(CommitFailure::ordinary)?
-            .keep();
-        fs::remove_dir(&backup).map_err(CommitFailure::ordinary)?;
-        fs::rename(destination, &backup).map_err(CommitFailure::ordinary)?;
-        let isolated_revision = snapshot_directory(&backup)
+    replace_directory_atomically(source, destination, expected_revision, |isolated| {
+        snapshot_directory(isolated)
             .map(|snapshot| snapshot.revision)
-            .map_err(|error| std::io::Error::other(error.to_string()));
-        if !matches!(isolated_revision.as_deref(), Ok(revision) if revision == expected_revision) {
-            return match fs::rename(&backup, destination) {
-            Ok(()) => Err(CommitFailure::ordinary(std::io::Error::other(
-                    "当前个人 Skill 在替换边界发生变化；原目录已恢复",
-            ))),
-            Err(restore_error) => Err(CommitFailure::ordinary(std::io::Error::new(
-                restore_error.kind(),
-                format!(
-                    "当前个人 Skill 在替换边界发生变化，且恢复失败（{restore_error}）；恢复副本保留在 {}",
-                    backup.display()
-                ),
-            ))),
-        };
-        }
-        if let Err(error) = rename_directory_no_replace(source, destination) {
-            return match fs::rename(&backup, destination) {
-            Ok(()) => Err(CommitFailure::ordinary(error)),
-            Err(restore_error) => Err(CommitFailure::ordinary(std::io::Error::new(
-                restore_error.kind(),
-                format!(
-                    "安装导入版本失败（{error}），恢复原 Skill 也失败（{restore_error}）；恢复副本保留在 {}",
-                    backup.display()
-                ),
-            ))),
-        };
-        }
-        let retained_backup = fs::remove_dir_all(&backup).err().map(|_| backup);
-        Ok(CommitNotice { retained_backup })
-    }
-}
-
-#[cfg(any(target_os = "macos", target_os = "linux"))]
-fn replace_personal_directory_atomic<F>(
-    source: &Path,
-    destination: &Path,
-    expected_revision: &str,
-    mut exchange: F,
-) -> Result<CommitNotice, CommitFailure>
-where
-    F: FnMut(&Path, &Path) -> std::io::Result<()>,
-{
-    exchange(source, destination).map_err(CommitFailure::ordinary)?;
-    let isolated_revision = snapshot_directory(source)
-        .map(|snapshot| snapshot.revision)
-        .map_err(|error| std::io::Error::other(error.to_string()));
-    if !matches!(isolated_revision.as_deref(), Ok(revision) if revision == expected_revision) {
-        return match exchange(source, destination) {
-            Ok(()) => Err(CommitFailure::ordinary(std::io::Error::other(
-                "当前个人 Skill 在替换边界发生变化；原目录已恢复",
-            ))),
-            Err(restore_error) => Err(CommitFailure {
-                error: std::io::Error::new(
-                    restore_error.kind(),
-                    format!(
-                        "当前个人 Skill 在替换边界发生变化，且原子恢复失败（{restore_error}）；导入版本位于 {}，恢复副本位于 {}",
-                        destination.display(),
-                        source.display()
-                    ),
-                ),
-                retain_prepared_directory: true,
-            }),
-        };
-    }
-    let retained_backup = fs::remove_dir_all(source)
-        .err()
-        .map(|_| source.to_path_buf());
-    Ok(CommitNotice { retained_backup })
-}
-
-#[cfg(any(target_os = "macos", target_os = "linux"))]
-fn exchange_directories(left: &Path, right: &Path) -> std::io::Result<()> {
-    use std::{ffi::CString, os::unix::ffi::OsStrExt};
-
-    let left = CString::new(left.as_os_str().as_bytes())
-        .map_err(|_| std::io::Error::other("directory path contains a NUL byte"))?;
-    let right = CString::new(right.as_os_str().as_bytes())
-        .map_err(|_| std::io::Error::other("directory path contains a NUL byte"))?;
-    #[cfg(target_os = "macos")]
-    let result = unsafe {
-        libc::renameatx_np(
-            libc::AT_FDCWD,
-            left.as_ptr(),
-            libc::AT_FDCWD,
-            right.as_ptr(),
-            libc::RENAME_SWAP,
-        )
-    };
-    #[cfg(target_os = "linux")]
-    let result = unsafe {
-        libc::syscall(
-            libc::SYS_renameat2,
-            libc::AT_FDCWD,
-            left.as_ptr(),
-            libc::AT_FDCWD,
-            right.as_ptr(),
-            libc::RENAME_EXCHANGE,
-        ) as libc::c_int
-    };
-    if result == 0 {
-        Ok(())
-    } else {
-        Err(std::io::Error::last_os_error())
-    }
+            .map_err(|error| std::io::Error::other(error.to_string()))
+    })
 }
 
 #[cfg(test)]
@@ -1271,7 +1137,9 @@ mod tests {
         for (directory_name, document_name, marker) in specs {
             let document = markdown(document_name, marker);
             let helper = format!("echo {marker}\n").into_bytes();
+            let finder = b"finder metadata".to_vec();
             let files = vec![
+                bundle_file(".DS_Store", &finder, false),
                 bundle_file("SKILL.md", &document, false),
                 bundle_file("scripts/helper.sh", &helper, true),
             ];
@@ -1280,6 +1148,7 @@ mod tests {
                 revision: skill_revision(&files).unwrap(),
                 files,
             });
+            payloads.push(finder);
             payloads.push(document);
             payloads.push(helper);
         }
@@ -1313,6 +1182,7 @@ mod tests {
         let directory = root.join(relative);
         fs::create_dir_all(directory.join("scripts")).unwrap();
         fs::write(directory.join("SKILL.md"), markdown(name, marker)).unwrap();
+        fs::write(directory.join(".DS_Store"), b"local finder metadata").unwrap();
         let helper = directory.join("scripts/helper.sh");
         fs::write(&helper, format!("echo {marker}\n")).unwrap();
         #[cfg(unix)]
@@ -1397,6 +1267,10 @@ mod tests {
         assert!(directory
             .path()
             .join("codex/skills/demo/scripts/helper.sh")
+            .exists());
+        assert!(!directory
+            .path()
+            .join("codex/skills/demo/.DS_Store")
             .exists());
         let second = imports
             .install_reviewed(
@@ -1615,50 +1489,11 @@ mod tests {
         let destination = write_catalog_skill(&root, "demo", "demo", "prior");
         let error =
             replace_personal_directory(&source, &destination, &root, "wrong-revision").unwrap_err();
-        assert!(error.error.to_string().contains("已恢复"));
+        assert!(error.error.to_string().contains("restored"));
         assert!(fs::read_to_string(destination.join("SKILL.md"))
             .unwrap()
             .contains("prior"));
         assert!(fs::read_to_string(source.join("SKILL.md"))
-            .unwrap()
-            .contains("imported"));
-    }
-
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
-    #[test]
-    fn failed_atomic_restore_marks_the_prior_directory_for_retention() {
-        let directory = tempfile::tempdir().unwrap();
-        let root = directory.path().join("skills");
-        fs::create_dir_all(&root).unwrap();
-        let temporary = Builder::new()
-            .prefix(".bundle-install-test-")
-            .tempdir_in(&root)
-            .unwrap();
-        write_catalog_skill(temporary.path(), "", "demo", "imported");
-        let source = temporary.path().to_path_buf();
-        let destination = write_catalog_skill(&root, "demo", "demo", "prior");
-        let mut calls = 0;
-        let failure = replace_personal_directory_atomic(
-            &source,
-            &destination,
-            "wrong-revision",
-            |left, right| {
-                calls += 1;
-                if calls == 1 {
-                    exchange_directories(left, right)
-                } else {
-                    Err(std::io::Error::other("injected restore failure"))
-                }
-            },
-        )
-        .unwrap_err();
-        assert!(failure.retain_prepared_directory);
-        let retained = temporary.keep();
-        assert_eq!(retained, source);
-        assert!(fs::read_to_string(source.join("SKILL.md"))
-            .unwrap()
-            .contains("prior"));
-        assert!(fs::read_to_string(destination.join("SKILL.md"))
             .unwrap()
             .contains("imported"));
     }

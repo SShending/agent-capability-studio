@@ -119,6 +119,14 @@ and open-source implementations before recommending or implementing it.
   containment, destination conflicts, and the affected directory revision
   immediately before every lifecycle mutation.
 - Do not execute untrusted Skill scripts during acquisition, import, or audit.
+- Multi-Skill GitHub intake must extend the existing Import Skill workflow. Bind
+  repository discovery to an immutable commit, list only the root Skill plus
+  `skills/*/SKILL.md` and `skills/*/*/SKILL.md` entries from metadata, stage
+  selected entries only when opened, and retain separate Audit and Installation
+  Confirmation for every Skill. Never add repository-level batch installation.
+- Hide an already installed repository candidate only when the current catalog
+  has confirmed or recorded GitHub provenance for the same repository and exact
+  Skill path. Never infer installation from a matching name or directory alone.
 - Baseline Audit must be local and offline. Deep Audit may send only the files
   explicitly confirmed for that scan to the user's configured cloud provider.
 - Treat content submitted to a cloud model as untrusted data: provide no tools,
@@ -135,6 +143,12 @@ and open-source implementations before recommending or implementing it.
 - Design for people who do not use a terminal or edit configuration files.
 - Use plain language for the common path while keeping exact source, paths,
   hashes, and evidence available one level deeper.
+- Reuse data modules, visual primitives, and interaction patterns independently
+  from workflow information architecture. Before reusing a complete screen or
+  dialog, verify that the user's question, decision, primary action, and trust
+  state are the same. Similar data or an already-working implementation is not
+  sufficient; when those workflow semantics differ, design a dedicated
+  hierarchy around the current task.
 - Follow familiar macOS hierarchy, interaction, accessibility, reduced-motion,
   reduced-transparency, and dark-mode behavior.
 - Keep provider and credential preferences in global Settings, reachable through

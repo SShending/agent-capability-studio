@@ -16,6 +16,30 @@ test("localization catalogs have identical stable keys", () => {
   }
 });
 
+test("Simplified Chinese UI does not expose untranslated domain terms", () => {
+  const untranslatedDomainTerm = /\b(?:Skills?|Packages?|Bundles?|Collections?)\b/;
+  const offenders = Object.entries(catalogs["zh-CN"])
+    .filter(([, value]) => untranslatedDomainTerm.test(value))
+    .map(([key, value]) => `${key}: ${value}`);
+
+  assert.deepEqual(offenders, []);
+});
+
+test("static Chinese fallback copy does not expose untranslated domain terms", async () => {
+  const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
+  const untranslatedDomainTerm = /\b(?:Skills?|Packages?|Bundles?|Collections?)\b/;
+  const allowedProductNames = new Set(["Agent Skill Studio", "Skill Studio"]);
+  const visibleText = [...html.matchAll(/>([^<>]+)</g)].map((match) => match[1].trim());
+  const accessibleText = [...html.matchAll(/\s(?:aria-label|title)="([^"]+)"/g)]
+    .map((match) => match[1].trim());
+  const offenders = [...visibleText, ...accessibleText]
+    .filter(Boolean)
+    .filter((value) => !allowedProductNames.has(value))
+    .filter((value) => untranslatedDomainTerm.test(value));
+
+  assert.deepEqual(offenders, []);
+});
+
 test("localization persists an explicit language and interpolates values", () => {
   const values = new Map();
   const storage = {

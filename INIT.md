@@ -42,9 +42,10 @@ programming background.
    and exact differences, then explicitly save or discard it.
 3. Create a Skill through a guided flow for purpose, trigger behavior, workflow,
    supporting files, and target Agent compatibility.
-4. Inspect a GitHub or local Skill candidate before installation; optionally run
-   a user-configured cloud semantic review after confirming the exact content
-   and destination, while keeping audit and installation separate.
+4. Inspect one or more Skill candidates discovered from a public GitHub
+   repository, or one candidate from a local folder, before installation;
+   optionally run a user-configured cloud semantic review after confirming the
+   exact content and destination, while keeping audit and installation separate.
 5. Export user-controlled Skills as a manifest-and-hash bundle. Desktop import
    verifies, stages, and compares a Bundle; for the owner's trusted Mac export,
    Codex on the Linux server may install it directly without repeating semantic

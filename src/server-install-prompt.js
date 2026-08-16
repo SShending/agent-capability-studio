@@ -17,13 +17,13 @@ This is a trusted Bundle exported from my own Mac with Agent Skill Studio. Do no
 - For a same-name Skill with different content, list its name and ask me before replacing anything.
 - Report the installed, skipped, and unresolved items when complete.`;
   }
-  return `请安装当前目录中的“${fileName}”到这台服务器的 Codex 个人 Skills 目录。
+  return `请安装当前目录中的“${fileName}”到这台服务器的 Codex 个人技能目录。
 
-这是我从自己 Mac 上的 Agent Skill Studio 导出的可信 Bundle，不需要重新做语义安全审查。
+这是我从自己 Mac 上的 Agent Skill Studio 导出的可信技能迁移包，不需要重新做语义安全审查。
 
 - 解压到临时目录，不要执行其中的脚本。
-- 将 skills/ 下的 Skill 安装到当前 Codex home 的 skills/。
-- 已存在且内容相同的 Skill 直接跳过。
-- 同名但内容不同的 Skill 先列出名称并询问我，不要覆盖。
+- 将 skills/ 下的技能安装到当前 Codex 主目录的 skills/。
+- 已存在且内容相同的技能直接跳过。
+- 同名但内容不同的技能先列出名称并询问我，不要覆盖。
 - 完成后报告已安装、已跳过和等待确认的项目。`;
 }

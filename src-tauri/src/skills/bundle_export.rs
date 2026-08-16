@@ -1,4 +1,4 @@
-use super::{InternalSkill, Source, Workspace};
+use super::{is_ignored_skill_metadata_name, InternalSkill, Source, Workspace};
 use regex::Regex;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -995,6 +995,9 @@ fn collect_paths(
     }
     for entry in fs::read_dir(current).map_err(|_| SnapshotError::Io)? {
         let entry = entry.map_err(|_| SnapshotError::Io)?;
+        if is_ignored_skill_metadata_name(&entry.file_name()) {
+            continue;
+        }
         *entry_count = entry_count
             .checked_add(1)
             .ok_or(SnapshotError::Limit(None))?;
@@ -1473,6 +1476,12 @@ mod tests {
     fn preview_and_export_create_a_verified_bundle_without_touching_sources() {
         let (directory, workspace) = workspace();
         let skill_directory = write_skill(directory.path(), "skills/demo", "demo");
+        fs::write(skill_directory.join(".DS_Store"), b"finder metadata").unwrap();
+        fs::write(
+            skill_directory.join("scripts/.DS_Store"),
+            b"nested finder metadata",
+        )
+        .unwrap();
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -1498,6 +1507,10 @@ mod tests {
         let mut file = File::open(destination).expect("bundle");
         let inspection = inspect_bundle(&mut file).expect("verified bundle");
         assert_eq!(inspection.bundle_revision, receipt.bundle_revision);
+        assert!(inspection.manifest.skills[0]
+            .files
+            .iter()
+            .all(|file| !file.path.contains(".DS_Store")));
         assert!(inspection.manifest.skills[0].files[1].executable);
         let metrics = workspace.metrics_snapshot();
         assert_eq!(metrics.full_scans, 1);

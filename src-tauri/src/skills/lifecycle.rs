@@ -1,6 +1,6 @@
 use super::{
-    hash, skill_id, InternalSkill, NameConflict, SkillDetail, Source, Workspace, WorkspaceError,
-    MAX_SCAN_DEPTH,
+    hash, is_ignored_skill_metadata_name, skill_id, InternalSkill, NameConflict, SkillDetail,
+    Source, Workspace, WorkspaceError, MAX_SCAN_DEPTH,
 };
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -125,12 +125,31 @@ impl Workspace {
         })
     }
 
+    #[cfg(test)]
     pub fn apply_skill_lifecycle(
         &self,
         id: &str,
         action: &str,
         expected_directory_revision: &str,
     ) -> Result<LifecycleResult, WorkspaceError> {
+        self.apply_skill_lifecycle_with_finalize(
+            id,
+            action,
+            expected_directory_revision,
+            |_, _, _| Ok(()),
+        )
+    }
+
+    pub(crate) fn apply_skill_lifecycle_with_finalize<F>(
+        &self,
+        id: &str,
+        action: &str,
+        expected_directory_revision: &str,
+        finalize: F,
+    ) -> Result<LifecycleResult, WorkspaceError>
+    where
+        F: FnOnce(&str, &str, &mut SkillDetail) -> Result<(), WorkspaceError>,
+    {
         let action = LifecycleAction::parse(action)?;
         if action == LifecycleAction::Delete {
             return Err(WorkspaceError::LifecycleNotAllowed);
@@ -171,13 +190,22 @@ impl Workspace {
         );
         let id = moved.summary.id.clone();
         let moved_revision = current_revision;
-        let detail = SkillDetail {
+        let mut detail = SkillDetail {
             content_hash: hash(&moved.markdown),
             summary: moved.summary.clone(),
             markdown: moved.markdown.clone(),
             document: moved.document.clone(),
             editable: target_source == Source::Personal,
         };
+        if let Err(error) = finalize(&skill.summary.id, &id, &mut detail) {
+            if let Err(rollback) = fs::rename(&destination, &source_directory) {
+                return Err(WorkspaceError::LifecycleRecoveryFailed(format!(
+                    "{error}; the directory remains at {} because restore failed: {rollback}",
+                    destination.display()
+                )));
+            }
+            return Err(error);
+        }
         self.remove_from_index(&skill.summary.id);
         self.upsert_index(moved)?;
         let _elapsed = self.record_timing(
@@ -202,12 +230,34 @@ impl Workspace {
         })
     }
 
+    #[cfg(test)]
     pub fn delete_archived_skill(
         &self,
         id: &str,
         expected_directory_revision: &str,
         confirmation_name: &str,
     ) -> Result<DeleteSkillResult, WorkspaceError> {
+        self.delete_archived_skill_with_finalize(
+            id,
+            expected_directory_revision,
+            confirmation_name,
+            || Ok(()),
+            || Ok(()),
+        )
+    }
+
+    pub(crate) fn delete_archived_skill_with_finalize<F, R>(
+        &self,
+        id: &str,
+        expected_directory_revision: &str,
+        confirmation_name: &str,
+        finalize: F,
+        rollback: R,
+    ) -> Result<DeleteSkillResult, WorkspaceError>
+    where
+        F: FnOnce() -> Result<(), WorkspaceError>,
+        R: FnOnce() -> Result<(), WorkspaceError>,
+    {
         let _mutation = self
             .mutations
             .lock()
@@ -226,7 +276,35 @@ impl Workspace {
         {
             return Err(WorkspaceError::DirectoryChanged);
         }
-        fs::remove_dir_all(directory)?;
+        finalize()?;
+        let boundary_check = (|| {
+            let boundary_directory = validated_skill_directory(&skill)?;
+            if boundary_directory != directory
+                || self.measured_directory_revision(&boundary_directory)? != current_revision
+            {
+                return Err(WorkspaceError::DirectoryChanged);
+            }
+            Ok(boundary_directory)
+        })();
+        let boundary_directory = match boundary_check {
+            Ok(boundary_directory) => boundary_directory,
+            Err(error) => {
+                return match rollback() {
+                    Ok(()) => Err(error),
+                    Err(rollback_error) => Err(WorkspaceError::LifecycleRecoveryFailed(format!(
+                        "delete boundary check failed: {error}; metadata restore failed: {rollback_error}"
+                    ))),
+                }
+            }
+        };
+        if let Err(error) = fs::remove_dir_all(boundary_directory) {
+            return match rollback() {
+                Ok(()) => Err(WorkspaceError::Io(error)),
+                Err(rollback_error) => Err(WorkspaceError::LifecycleRecoveryFailed(format!(
+                    "directory deletion failed: {error}; metadata restore failed: {rollback_error}"
+                ))),
+            };
+        }
         self.remove_from_index(id);
         let _elapsed = self.record_timing(
             &self.metrics.lifecycle_mutations,
@@ -329,7 +407,7 @@ fn rehome_skill(
     skill
 }
 
-fn directory_revision(root: &Path) -> Result<String, WorkspaceError> {
+pub(super) fn directory_revision(root: &Path) -> Result<String, WorkspaceError> {
     let mut records = Vec::new();
     collect_records(root, root, 0, &mut records)?;
     records.sort_by(|left, right| left.0.cmp(&right.0));
@@ -357,6 +435,9 @@ fn collect_records(
     let mut entries: Vec<_> = fs::read_dir(current)?.collect::<Result<_, _>>()?;
     entries.sort_by_key(|entry| entry.file_name());
     for entry in entries {
+        if is_ignored_skill_metadata_name(&entry.file_name()) {
+            continue;
+        }
         let path = entry.path();
         let relative = path
             .strip_prefix(root)
@@ -549,6 +630,50 @@ mod tests {
     }
 
     #[test]
+    fn permanent_delete_restores_metadata_when_directory_changes_during_finalize() {
+        let (directory, workspace) = workspace();
+        write_skill(directory.path(), "skill-archive/racing", "racing");
+        let id = skill_id(&workspace, "archive", "racing");
+        let preview = workspace
+            .preview_skill_lifecycle(&id, "delete")
+            .expect("delete preview");
+        let skill_directory = directory.path().join("skill-archive/racing");
+        let rollback_called = std::cell::Cell::new(false);
+
+        let result = workspace.delete_archived_skill_with_finalize(
+            &id,
+            &preview.directory_revision,
+            "racing",
+            || {
+                fs::write(skill_directory.join("external.md"), "external change")?;
+                Ok(())
+            },
+            || {
+                rollback_called.set(true);
+                Ok(())
+            },
+        );
+
+        assert!(matches!(result, Err(WorkspaceError::DirectoryChanged)));
+        assert!(rollback_called.get());
+        assert_eq!(
+            fs::read_to_string(skill_directory.join("external.md")).unwrap(),
+            "external change"
+        );
+    }
+
+    #[test]
+    fn finder_metadata_does_not_change_directory_revision() {
+        let (directory, _workspace) = workspace();
+        write_skill(directory.path(), "skills/finder", "finder");
+        let skill = directory.path().join("skills/finder");
+        let before = directory_revision(&skill).unwrap();
+        fs::write(skill.join(".DS_Store"), b"finder root metadata").unwrap();
+        fs::write(skill.join("scripts/.DS_Store"), b"finder nested metadata").unwrap();
+        assert_eq!(directory_revision(&skill).unwrap(), before);
+    }
+
+    #[test]
     fn invalid_sources_and_actions_are_rejected() {
         let (directory, workspace) = workspace();
         write_skill(directory.path(), "skills/personal", "personal");
@@ -686,7 +811,7 @@ mod tests {
         assert_eq!(before_refresh.full_scans, 1);
         assert_eq!(before_refresh.skill_reads, 121);
         assert_eq!(before_refresh.baseline_audits, before_refresh.skill_reads);
-        assert_eq!(before_refresh.directory_revisions, 8);
+        assert_eq!(before_refresh.directory_revisions, 9);
         assert_eq!(before_refresh.lifecycle_mutations, 4);
         assert!(before_refresh.full_scan_nanos > 0);
         assert!(before_refresh.skill_read_nanos > 0);

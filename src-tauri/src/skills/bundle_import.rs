@@ -1,8 +1,9 @@
-use super::{AuditResult, Diff, Finding, SkillDocument};
+use super::{is_ignored_skill_metadata_path, AuditResult, Diff, Finding, SkillDocument};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use skill_bundle_core::{
-    visit_bundle_files, BundleError, BundleFile, BundleManifest, BundleSkill, MAX_ARCHIVE_BYTES,
+    skill_revision, visit_bundle_files, BundleError, BundleFile, BundleManifest, BundleSkill,
+    MAX_ARCHIVE_BYTES,
 };
 use std::{
     collections::HashMap,
@@ -123,6 +124,7 @@ struct ImportStore {
 
 #[derive(Clone)]
 struct ImportSession {
+    verified_manifest: BundleManifest,
     manifest: BundleManifest,
     bundle_revision: String,
     review: BundleImportReview,
@@ -197,7 +199,7 @@ impl BundleImportManager {
     ) -> Result<BundleImportReview, BundleImportError> {
         let session = self.session(session_id, expected_bundle_revision)?;
         let content_root = self.session_path(session_id)?.join("content");
-        for skill in &session.manifest.skills {
+        for skill in &session.verified_manifest.skills {
             for file in &skill.files {
                 read_staged_file(&content_root, &skill.directory_name, file)?;
             }
@@ -295,8 +297,9 @@ impl BundleImportManager {
         let inspection = visit_bundle_files(&mut archive, |skill, file, reader| {
             write_staged_file(&content_root, skill, file, reader)
         })?;
-        let mut skills = Vec::with_capacity(inspection.manifest.skills.len());
-        for skill in &inspection.manifest.skills {
+        let manifest = logical_manifest(&inspection.manifest)?;
+        let mut skills = Vec::with_capacity(manifest.skills.len());
+        for skill in &manifest.skills {
             let root_file = skill
                 .files
                 .iter()
@@ -323,12 +326,18 @@ impl BundleImportManager {
             source_revision,
             bundle_revision: inspection.bundle_revision.clone(),
             skills,
-            total_files: inspection.total_files,
-            total_bytes: inspection.total_bytes,
+            total_files: manifest.skills.iter().map(|skill| skill.files.len()).sum(),
+            total_bytes: manifest
+                .skills
+                .iter()
+                .flat_map(|skill| &skill.files)
+                .map(|file| file.size)
+                .sum(),
             installed: false,
         };
         let session = ImportSession {
-            manifest: inspection.manifest,
+            verified_manifest: inspection.manifest,
+            manifest,
             bundle_revision: inspection.bundle_revision,
             review: review.clone(),
         };
@@ -371,6 +380,17 @@ impl BundleImportManager {
         }
         Ok(path)
     }
+}
+
+fn logical_manifest(verified: &BundleManifest) -> Result<BundleManifest, BundleImportError> {
+    let mut manifest = verified.clone();
+    for skill in &mut manifest.skills {
+        skill
+            .files
+            .retain(|file| !is_ignored_skill_metadata_path(&file.path));
+        skill.revision = skill_revision(&skill.files)?;
+    }
+    Ok(manifest)
 }
 
 fn copy_selected_bundle(source: &Path, destination: &Path) -> Result<String, BundleImportError> {
@@ -1050,6 +1070,45 @@ mod tests {
         write_bundle(File::create(path).unwrap(), &manifest, &mut readers).unwrap();
     }
 
+    fn bundle_with_finder_metadata(path: &Path) {
+        let finder = b"finder metadata";
+        let markdown = b"---\nname: demo\ndescription: Use when importing a Bundle.\n---\n# Demo\n";
+        let nested_finder = b"nested finder metadata";
+        let files = vec![
+            file(".DS_Store", finder, false),
+            file("SKILL.md", markdown, false),
+            file("references/.DS_Store", nested_finder, false),
+        ];
+        let manifest = BundleManifest {
+            format: BUNDLE_FORMAT.into(),
+            format_version: BUNDLE_FORMAT_VERSION,
+            agent_contract: AgentContract {
+                id: CODEX_CONTRACT_ID.into(),
+                version: CODEX_CONTRACT_VERSION,
+            },
+            skills: vec![BundleSkill {
+                directory_name: "demo".into(),
+                revision: skill_revision(&files).unwrap(),
+                files,
+            }],
+        };
+        let mut finder_reader = Cursor::new(finder.as_slice());
+        let mut markdown_reader = Cursor::new(markdown.as_slice());
+        let mut nested_finder_reader = Cursor::new(nested_finder.as_slice());
+        let mut readers = [
+            BundleFileReader {
+                reader: &mut finder_reader,
+            },
+            BundleFileReader {
+                reader: &mut markdown_reader,
+            },
+            BundleFileReader {
+                reader: &mut nested_finder_reader,
+            },
+        ];
+        write_bundle(File::create(path).unwrap(), &manifest, &mut readers).unwrap();
+    }
+
     fn file(path: &str, bytes: &[u8], executable: bool) -> BundleFile {
         BundleFile {
             path: path.into(),
@@ -1101,6 +1160,53 @@ mod tests {
         }
         manager.discard(&review.session_id).unwrap();
         assert!(!session.exists());
+    }
+
+    #[test]
+    fn verifies_finder_metadata_before_excluding_it_from_the_import_model() {
+        let directory = tempfile::tempdir().unwrap();
+        let source = directory.path().join("finder.skillbundle");
+        bundle_with_finder_metadata(&source);
+        let manager = BundleImportManager::new(directory.path().join("staging")).unwrap();
+        let review = manager.stage(&source).unwrap();
+        assert_eq!(review.total_files, 1);
+        assert_eq!(review.total_bytes, markdown_len() as u64);
+        assert_eq!(review.skills[0].files.len(), 1);
+        assert_eq!(review.skills[0].files[0].path, "SKILL.md");
+        assert_eq!(
+            review.skills[0].revision,
+            skill_revision(&[file(
+                "SKILL.md",
+                b"---\nname: demo\ndescription: Use when importing a Bundle.\n---\n# Demo\n",
+                false,
+            )])
+            .unwrap()
+        );
+        let session = manager
+            .session(&review.session_id, &review.bundle_revision)
+            .unwrap();
+        assert_eq!(session.verified_manifest.skills[0].files.len(), 3);
+        assert_eq!(session.manifest.skills[0].files.len(), 1);
+        assert!(manager
+            .verified_review(&review.session_id, &review.bundle_revision)
+            .is_ok());
+        assert!(manager
+            .session_path(&review.session_id)
+            .unwrap()
+            .join("content/skills/demo/.DS_Store")
+            .is_file());
+        fs::write(
+            manager
+                .session_path(&review.session_id)
+                .unwrap()
+                .join("content/skills/demo/.DS_Store"),
+            b"tampered finder metadata",
+        )
+        .unwrap();
+        assert!(matches!(
+            manager.verified_review(&review.session_id, &review.bundle_revision),
+            Err(BundleImportError::ChangedSession)
+        ));
     }
 
     fn markdown_len() -> usize {

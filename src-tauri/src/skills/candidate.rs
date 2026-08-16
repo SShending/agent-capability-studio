@@ -13,11 +13,19 @@ use std::{
     fs::{self, File, OpenOptions},
     io::{Read, Write},
     path::{Component, Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+        mpsc, Arc, Mutex,
+    },
     time::Duration,
 };
 use tempfile::Builder;
 use thiserror::Error;
+
+use super::{
+    is_ignored_skill_metadata_name, is_ignored_skill_metadata_path,
+    package::CandidateFileSyncAction,
+};
 
 const MAX_FILES: usize = 256;
 const MAX_TOTAL_BYTES: usize = 25 * 1024 * 1024;
@@ -25,6 +33,9 @@ const MAX_FILE_BYTES: usize = 2 * 1024 * 1024;
 const MAX_DEPTH: usize = 8;
 const MAX_SOURCE_PATH_COMPONENTS: usize = 16;
 const MAX_API_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
+const MAX_REPOSITORY_SKILLS: usize = 256;
+const MAX_CONCURRENT_GITHUB_BLOBS: usize = 6;
+const MAX_CACHED_REPOSITORY_REVISIONS: usize = 8;
 
 #[derive(Debug, Error)]
 pub enum CandidateError {
@@ -34,6 +45,10 @@ pub enum CandidateError {
     InvalidLocalDirectory,
     #[error("The candidate does not contain SKILL.md at its root.")]
     MissingSkillDocument,
+    #[error("The repository does not contain a Skill at a supported conventional path.")]
+    NoRepositorySkills,
+    #[error("The repository contains more than 256 discoverable Skills.")]
+    TooManyRepositorySkills,
     #[error("The candidate contains an unsafe or unsupported entry: {0}")]
     UnsafeEntry(String),
     #[error("The candidate contains too many files. The current limit is 256.")]
@@ -58,6 +73,8 @@ pub enum CandidateError {
     ChangedSession,
     #[error("This file is not part of the staged candidate.")]
     UnknownFile,
+    #[error("This file cannot be synchronized with the requested action.")]
+    InvalidFileSync,
     #[error("Unable to stage the candidate: {0}")]
     Io(#[from] std::io::Error),
 }
@@ -72,6 +89,29 @@ pub enum CandidateInstallError {
     Blocked,
     #[error("The installation preview changed. Review the destination again.")]
     PreviewMismatch,
+}
+
+#[derive(Debug, Error)]
+pub enum GithubUpdateError {
+    #[error(transparent)]
+    Candidate(#[from] CandidateError),
+    #[error(transparent)]
+    Workspace(#[from] super::WorkspaceError),
+    #[error("This Skill does not have sufficient GitHub provenance for an update check.")]
+    ProvenanceUnavailable,
+    #[error("Only user-controlled Skills can check for GitHub updates.")]
+    ReadOnly,
+}
+
+impl GithubUpdateError {
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::Candidate(error) => error.code(),
+            Self::Workspace(error) => error.code(),
+            Self::ProvenanceUnavailable => "GITHUB_UPDATE_PROVENANCE_UNAVAILABLE",
+            Self::ReadOnly => "GITHUB_UPDATE_READ_ONLY",
+        }
+    }
 }
 
 impl CandidateInstallError {
@@ -91,6 +131,8 @@ impl CandidateError {
             Self::InvalidGithubUrl => "INVALID_GITHUB_CANDIDATE_URL",
             Self::InvalidLocalDirectory => "INVALID_LOCAL_CANDIDATE",
             Self::MissingSkillDocument => "MISSING_SKILL_DOCUMENT",
+            Self::NoRepositorySkills => "NO_REPOSITORY_SKILLS",
+            Self::TooManyRepositorySkills => "REPOSITORY_SKILL_LIMIT",
             Self::UnsafeEntry(_) => "UNSAFE_CANDIDATE_ENTRY",
             Self::TooManyFiles => "CANDIDATE_FILE_LIMIT",
             Self::FileTooLarge(_) => "CANDIDATE_FILE_SIZE_LIMIT",
@@ -103,6 +145,7 @@ impl CandidateError {
             Self::UnknownSession => "UNKNOWN_CANDIDATE_SESSION",
             Self::ChangedSession => "STALE_CANDIDATE",
             Self::UnknownFile => "UNKNOWN_CANDIDATE_FILE",
+            Self::InvalidFileSync => "INVALID_CANDIDATE_FILE_SYNC",
             Self::Io(_) => "CANDIDATE_IO_ERROR",
         }
     }
@@ -118,7 +161,39 @@ pub struct CandidateManifest {
     pub candidate_hash: String,
 }
 
+/// Metadata-only discovery result for the existing GitHub candidate intake.
+/// No candidate blob is downloaded while producing this value.
 #[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GithubRepositoryListing {
+    pub repository: String,
+    pub requested_ref: String,
+    pub resolved_sha: String,
+    pub candidates: Vec<GithubRepositoryCandidate>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GithubRepositoryCandidate {
+    pub skill_path: String,
+    pub directory_name: String,
+    pub repository_root: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GithubUpdateCheck {
+    pub status: String,
+    pub manifest: CandidateManifest,
+    pub local_files: Vec<CandidateFile>,
+    pub local_revision: String,
+    pub local_candidate_hash: String,
+    pub installed_candidate_hash: Option<String>,
+    pub installed_sha: Option<String>,
+    pub remote_sha: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(
     tag = "kind",
     rename_all = "camelCase",
@@ -197,6 +272,7 @@ pub struct CandidateInstallPreview {
     pub install_revision: String,
     pub compatibility_status: String,
     pub audit_verdict: String,
+    pub classification: String,
     pub conflict: Option<super::NameConflict>,
     pub can_install: bool,
 }
@@ -204,23 +280,42 @@ pub struct CandidateInstallPreview {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CandidateInstallResult {
+    pub status: String,
+    pub installed_id: String,
     pub skill: Option<super::SkillDetail>,
     pub destination: String,
     pub installed_files: usize,
     pub candidate_hash: String,
     pub catalog_refresh_needed: bool,
     pub restart_recommended: bool,
+    pub provenance_recorded: bool,
 }
 
 #[derive(Clone)]
 pub struct CandidateStager {
     store: Arc<StagingStore>,
     github: Arc<dyn GithubTransport>,
+    repository_revisions: Arc<Mutex<HashMap<RepositoryRevisionKey, RepositoryRevision>>>,
 }
 
 struct StagingStore {
     root: PathBuf,
     sessions: Mutex<HashMap<String, CandidateManifest>>,
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+struct RepositoryRevisionKey {
+    owner: String,
+    repository: String,
+    requested_ref: String,
+    resolved_sha: String,
+}
+
+#[derive(Clone)]
+struct RepositoryRevision {
+    commit: ResolvedCommit,
+    entries: Vec<GithubTreeEntry>,
+    candidates: Vec<GithubRepositoryCandidate>,
 }
 
 struct VerifiedCandidateSnapshot {
@@ -252,6 +347,16 @@ impl Drop for StagingStore {
 }
 
 impl CandidateStager {
+    pub fn source(
+        &self,
+        session_id: &str,
+        expected_candidate_hash: &str,
+    ) -> Result<CandidateSource, CandidateError> {
+        Ok(self
+            .session_manifest(session_id, expected_candidate_hash)?
+            .source)
+    }
+
     pub fn new(staging_root: PathBuf) -> Result<Self, CandidateError> {
         Self::with_github(staging_root, Arc::new(HttpGithubTransport::new()))
     }
@@ -267,6 +372,7 @@ impl CandidateStager {
                 sessions: Mutex::new(HashMap::new()),
             }),
             github,
+            repository_revisions: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 
@@ -318,6 +424,20 @@ impl CandidateStager {
 
     pub fn stage_github(&self, source_url: &str) -> Result<CandidateManifest, CandidateError> {
         let request = parse_github_url(source_url)?;
+        self.stage_github_request(request)
+    }
+
+    /// Lists the bounded set of conventional Skills in a repository root. This
+    /// intentionally reads GitHub tree metadata only; content remains untrusted
+    /// and unstaged until the owner opens one selected entry.
+    pub fn list_github_repository(
+        &self,
+        source_url: &str,
+    ) -> Result<GithubRepositoryListing, CandidateError> {
+        let request = parse_github_url(source_url)?;
+        if !request.skill_path.is_empty() {
+            return Err(CandidateError::InvalidGithubUrl);
+        }
         let requested_ref = match request.requested_ref.clone() {
             Some(reference) => reference,
             None => self
@@ -327,6 +447,162 @@ impl CandidateStager {
         let commit =
             self.github
                 .resolve_commit(&request.owner, &request.repository, &requested_ref)?;
+        let tree = self.github.tree(
+            &request.owner,
+            &request.repository,
+            &commit.root_tree_sha,
+            true,
+        )?;
+        if tree.truncated {
+            return Err(CandidateError::TruncatedTree);
+        }
+        let candidates = discover_repository_candidates(tree.entries.clone())?;
+        self.remember_repository_revision(
+            &request,
+            &requested_ref,
+            &commit,
+            tree.entries,
+            candidates.clone(),
+        );
+        Ok(GithubRepositoryListing {
+            repository: format!("{}/{}", request.owner, request.repository),
+            requested_ref,
+            resolved_sha: commit.sha,
+            candidates,
+        })
+    }
+
+    /// Stages one path selected from a prior repository listing. The resolved
+    /// commit is supplied by that listing. Discovery metadata is reused only
+    /// within this process and every downloaded blob remains bound to the
+    /// immutable commit and tree metadata.
+    pub fn stage_github_repository_candidate(
+        &self,
+        source_url: &str,
+        requested_ref: &str,
+        resolved_sha: &str,
+        skill_path: &str,
+    ) -> Result<CandidateManifest, CandidateError> {
+        let source = parse_github_url(source_url)?;
+        if !source.skill_path.is_empty()
+            || source
+                .requested_ref
+                .as_deref()
+                .is_some_and(|source_ref| source_ref != requested_ref)
+            || requested_ref.is_empty()
+            || requested_ref.len() > 255
+            || !valid_sha(resolved_sha)
+            || !is_conventional_repository_skill_path(skill_path)
+        {
+            return Err(CandidateError::InvalidGithubUrl);
+        }
+        let request = GithubRequest {
+            owner: source.owner,
+            repository: source.repository,
+            requested_ref: Some(requested_ref.into()),
+            skill_path: skill_path.into(),
+        };
+        let revision = self.repository_revision(&request, requested_ref, resolved_sha)?;
+        if !revision
+            .candidates
+            .iter()
+            .any(|candidate| candidate.skill_path == skill_path)
+        {
+            return Err(CandidateError::UnsafeEntry(skill_path.into()));
+        }
+        let entries =
+            repository_candidate_entries(&revision.entries, &revision.candidates, skill_path);
+        let inputs = github_inputs(entries)?;
+        require_skill_document(inputs.iter().map(|input| input.relative.as_str()))?;
+        self.stage_github_inputs(request, requested_ref.into(), revision.commit, inputs)
+    }
+
+    pub fn check_github_update(
+        &self,
+        workspace: &super::Workspace,
+        skill_id: &str,
+        acquisition: &super::AcquisitionProvenance,
+    ) -> Result<GithubUpdateCheck, GithubUpdateError> {
+        if acquisition.kind != "github"
+            || !matches!(acquisition.confidence.as_str(), "recorded" | "confirmed")
+        {
+            return Err(GithubUpdateError::ProvenanceUnavailable);
+        }
+        let repository = acquisition
+            .repository
+            .as_deref()
+            .ok_or(GithubUpdateError::ProvenanceUnavailable)?;
+        let (owner, repository) = repository
+            .split_once('/')
+            .filter(|(owner, repository)| valid_github_atom(owner) && valid_github_atom(repository))
+            .ok_or(GithubUpdateError::ProvenanceUnavailable)?;
+        let skill_path = acquisition.skill_path.clone().unwrap_or_default();
+        if source_components(&skill_path).count() > MAX_SOURCE_PATH_COMPONENTS
+            || source_components(&skill_path).any(|component| !valid_path_atom(component))
+        {
+            return Err(GithubUpdateError::ProvenanceUnavailable);
+        }
+        let skill = workspace.find_skill(skill_id)?;
+        if !matches!(
+            skill.source,
+            super::Source::Personal | super::Source::Disabled | super::Source::Archive
+        ) {
+            return Err(GithubUpdateError::ReadOnly);
+        }
+        let local_files = candidate_files_for_directory(&skill.directory)?;
+        let local_candidate_hash = candidate_hash(&local_files);
+        let local_revision = super::lifecycle::directory_revision(&skill.directory)?;
+        let manifest = self.stage_github_request(GithubRequest {
+            owner: owner.into(),
+            repository: repository.into(),
+            requested_ref: acquisition.requested_ref.clone(),
+            skill_path,
+        })?;
+        let CandidateSource::Github { resolved_sha, .. } = &manifest.source else {
+            unreachable!("GitHub staging always records a GitHub source");
+        };
+        let status = classify_github_update(
+            &local_candidate_hash,
+            &manifest.candidate_hash,
+            acquisition.candidate_hash.as_deref(),
+            acquisition.resolved_sha.as_deref(),
+            resolved_sha,
+        );
+        Ok(GithubUpdateCheck {
+            status: status.into(),
+            remote_sha: resolved_sha.clone(),
+            manifest,
+            local_files,
+            local_revision,
+            local_candidate_hash,
+            installed_candidate_hash: acquisition.candidate_hash.clone(),
+            installed_sha: acquisition.resolved_sha.clone(),
+        })
+    }
+
+    fn stage_github_request(
+        &self,
+        request: GithubRequest,
+    ) -> Result<CandidateManifest, CandidateError> {
+        let requested_ref = match request.requested_ref.clone() {
+            Some(reference) => reference,
+            None => self
+                .github
+                .default_branch(&request.owner, &request.repository)?,
+        };
+        let commit =
+            self.github
+                .resolve_commit(&request.owner, &request.repository, &requested_ref)?;
+        self.stage_github_at_commit(request, requested_ref, commit, false)
+    }
+
+    fn stage_github_at_commit(
+        &self,
+        request: GithubRequest,
+        requested_ref: String,
+        commit: ResolvedCommit,
+        repository_root_intake: bool,
+    ) -> Result<CandidateManifest, CandidateError> {
         let target_tree_sha = self.resolve_target_tree(&request, &commit.root_tree_sha)?;
         let tree = self
             .github
@@ -334,26 +610,45 @@ impl CandidateStager {
         if tree.truncated {
             return Err(CandidateError::TruncatedTree);
         }
-        let inputs = github_inputs(tree.entries)?;
+        let excluded_nested_skill_paths = if repository_root_intake && request.skill_path.is_empty()
+        {
+            discover_repository_candidates(tree.entries.clone())?
+                .into_iter()
+                .filter(|candidate| !candidate.repository_root)
+                .map(|candidate| candidate.skill_path)
+                .collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
+        let inputs = github_inputs(
+            tree.entries
+                .into_iter()
+                .filter(|entry| {
+                    !excluded_nested_skill_paths.iter().any(|path| {
+                        entry.path == *path || entry.path.starts_with(&format!("{path}/"))
+                    })
+                })
+                .collect(),
+        )?;
         require_skill_document(inputs.iter().map(|input| input.relative.as_str()))?;
+
+        self.stage_github_inputs(request, requested_ref, commit, inputs)
+    }
+
+    fn stage_github_inputs(
+        &self,
+        request: GithubRequest,
+        requested_ref: String,
+        commit: ResolvedCommit,
+        inputs: Vec<GithubInput>,
+    ) -> Result<CandidateManifest, CandidateError> {
+        let downloads = self.download_github_inputs(&request, &commit, &inputs)?;
 
         let (session_id, session_path) = self.begin_session()?;
         let result = (|| {
             let mut files = Vec::with_capacity(inputs.len());
             let mut total_bytes = 0usize;
-            for input in inputs {
-                let source_path = join_source_path(&request.skill_path, &input.relative);
-                let bytes = self.github.download_blob(
-                    &request.owner,
-                    &request.repository,
-                    &commit.sha,
-                    &source_path,
-                    &input.blob_sha,
-                    input.declared_size,
-                )?;
-                if bytes.len() != input.declared_size {
-                    return Err(CandidateError::InconsistentGithubSource);
-                }
+            for (input, bytes) in inputs.into_iter().zip(downloads) {
                 total_bytes = checked_total(total_bytes, bytes.len())?;
                 write_staged_file(&session_path, &input.relative, &bytes)?;
                 files.push(CandidateFile {
@@ -376,6 +671,84 @@ impl CandidateStager {
             ))
         })();
         self.finish_or_cleanup(&session_id, &session_path, result)
+    }
+
+    fn download_github_inputs(
+        &self,
+        request: &GithubRequest,
+        commit: &ResolvedCommit,
+        inputs: &[GithubInput],
+    ) -> Result<Vec<Vec<u8>>, CandidateError> {
+        if inputs.is_empty() {
+            return Ok(Vec::new());
+        }
+        let next = AtomicUsize::new(0);
+        let cancelled = AtomicBool::new(false);
+        let worker_count = inputs.len().min(MAX_CONCURRENT_GITHUB_BLOBS);
+        let (sender, receiver) = mpsc::channel();
+
+        std::thread::scope(|scope| {
+            for _ in 0..worker_count {
+                let sender = sender.clone();
+                let github = self.github.clone();
+                let next = &next;
+                let cancelled = &cancelled;
+                scope.spawn(move || loop {
+                    if cancelled.load(Ordering::Acquire) {
+                        break;
+                    }
+                    let index = next.fetch_add(1, Ordering::AcqRel);
+                    let Some(input) = inputs.get(index) else {
+                        break;
+                    };
+                    let source_path = join_source_path(&request.skill_path, &input.relative);
+                    let result = github
+                        .download_blob(
+                            &request.owner,
+                            &request.repository,
+                            &commit.sha,
+                            &source_path,
+                            &input.blob_sha,
+                            input.declared_size,
+                        )
+                        .and_then(|bytes| {
+                            if bytes.len() == input.declared_size {
+                                Ok(bytes)
+                            } else {
+                                Err(CandidateError::InconsistentGithubSource)
+                            }
+                        });
+                    if result.is_err() {
+                        cancelled.store(true, Ordering::Release);
+                    }
+                    if sender.send((index, result)).is_err() {
+                        break;
+                    }
+                });
+            }
+        });
+        drop(sender);
+
+        let mut downloads = (0..inputs.len()).map(|_| None).collect::<Vec<_>>();
+        let mut error = None;
+        for (index, result) in receiver {
+            match result {
+                Ok(bytes) => downloads[index] = Some(bytes),
+                Err(candidate_error) if error.is_none() => error = Some(candidate_error),
+                Err(_) => {}
+            }
+        }
+        if let Some(error) = error {
+            return Err(error);
+        }
+        downloads
+            .into_iter()
+            .map(|download| {
+                download.ok_or_else(|| {
+                    CandidateError::Github("a GitHub download worker stopped unexpectedly".into())
+                })
+            })
+            .collect()
     }
 
     pub fn review(
@@ -424,6 +797,26 @@ impl CandidateStager {
             return Err(CandidateInstallError::Blocked);
         }
 
+        if advisory.classification == "identical" {
+            let _mutation = workspace
+                .mutations
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            let refreshed = workspace.scan_catalog_index()?;
+            *workspace
+                .index
+                .write()
+                .unwrap_or_else(|error| error.into_inner()) = Some(refreshed);
+            if let Some(skill) = exact_name_match(
+                workspace,
+                &advisory.name,
+                &snapshot.review.manifest.candidate_hash,
+            )? {
+                return Ok(identical_install_result(&snapshot, skill));
+            }
+            return Err(CandidateInstallError::PreviewMismatch);
+        }
+
         let personal_root = workspace.personal_root_for_creation()?;
         let destination = personal_root.join(&advisory.name);
         if !destination.starts_with(&personal_root)
@@ -449,6 +842,13 @@ impl CandidateStager {
             .index
             .write()
             .unwrap_or_else(|error| error.into_inner()) = Some(refreshed);
+        if let Some(skill) = exact_name_match(
+            workspace,
+            &advisory.name,
+            &snapshot.review.manifest.candidate_hash,
+        )? {
+            return Ok(identical_install_result(&snapshot, skill));
+        }
         if let Some(conflict) = workspace.find_name_conflict(&advisory.name)? {
             return Err(super::WorkspaceError::NameConflict {
                 name: advisory.name,
@@ -474,6 +874,7 @@ impl CandidateStager {
         // The rename is the commit boundary. Parent syncing is best-effort because a
         // post-commit durability error must not be reported as a failed installation.
         let _ = sync_directory(&personal_root);
+        let installed_id = super::skill_id(super::Source::Personal, &destination);
 
         let installed =
             match workspace.read_skill(&destination, super::Source::Personal, &personal_root) {
@@ -484,12 +885,15 @@ impl CandidateStager {
                         .write()
                         .unwrap_or_else(|error| error.into_inner()) = None;
                     return Ok(CandidateInstallResult {
+                        status: "installed".into(),
+                        installed_id,
                         skill: None,
                         destination: destination.display().to_string(),
                         installed_files: snapshot.files.len(),
                         candidate_hash: snapshot.review.manifest.candidate_hash,
                         catalog_refresh_needed: true,
                         restart_recommended: true,
+                        provenance_recorded: false,
                     });
                 }
             };
@@ -504,12 +908,15 @@ impl CandidateStager {
         workspace.upsert_index(installed)?;
         debug_assert_eq!(skill.summary.id, installed_id);
         Ok(CandidateInstallResult {
+            status: "installed".into(),
+            installed_id,
             skill: Some(skill),
             destination: destination.display().to_string(),
             installed_files: snapshot.files.len(),
             candidate_hash: snapshot.review.manifest.candidate_hash,
             catalog_refresh_needed: false,
             restart_recommended: true,
+            provenance_recorded: false,
         })
     }
 
@@ -539,6 +946,38 @@ impl CandidateStager {
                 is_text: false,
             }),
         }
+    }
+
+    pub fn file_sync_data(
+        &self,
+        session_id: &str,
+        expected_candidate_hash: &str,
+        path: &str,
+        action: CandidateFileSyncAction,
+    ) -> Result<Option<(Vec<u8>, bool)>, CandidateError> {
+        let snapshot = self.verified_snapshot(session_id, expected_candidate_hash)?;
+        let path = validated_relative_string(path)?;
+        let remote = snapshot
+            .files
+            .into_iter()
+            .find(|file| file.manifest.path == path);
+        match (action, remote) {
+            (CandidateFileSyncAction::Add | CandidateFileSyncAction::Replace, Some(file)) => {
+                Ok(Some((file.bytes, file.manifest.executable)))
+            }
+            (CandidateFileSyncAction::Delete, None) if path != "SKILL.md" => Ok(None),
+            _ => Err(CandidateError::InvalidFileSync),
+        }
+    }
+
+    pub fn directory_matches(
+        &self,
+        session_id: &str,
+        expected_candidate_hash: &str,
+        directory: &Path,
+    ) -> Result<bool, CandidateError> {
+        let manifest = self.session_manifest(session_id, expected_candidate_hash)?;
+        Ok(candidate_hash(&candidate_files_for_directory(directory)?) == manifest.candidate_hash)
     }
 
     pub(crate) fn audit_snapshot(
@@ -643,6 +1082,87 @@ impl CandidateStager {
         Ok(VerifiedCandidateSnapshot { review, files })
     }
 
+    fn repository_revision(
+        &self,
+        request: &GithubRequest,
+        requested_ref: &str,
+        resolved_sha: &str,
+    ) -> Result<RepositoryRevision, CandidateError> {
+        let key = RepositoryRevisionKey {
+            owner: request.owner.clone(),
+            repository: request.repository.clone(),
+            requested_ref: requested_ref.into(),
+            resolved_sha: resolved_sha.into(),
+        };
+        if let Some(revision) = self
+            .repository_revisions
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .get(&key)
+            .cloned()
+        {
+            return Ok(revision);
+        }
+
+        let commit =
+            self.github
+                .resolve_commit(&request.owner, &request.repository, resolved_sha)?;
+        if commit.sha != resolved_sha {
+            return Err(CandidateError::InconsistentGithubSource);
+        }
+        let tree = self.github.tree(
+            &request.owner,
+            &request.repository,
+            &commit.root_tree_sha,
+            true,
+        )?;
+        if tree.truncated {
+            return Err(CandidateError::TruncatedTree);
+        }
+        let candidates = discover_repository_candidates(tree.entries.clone())?;
+        let revision = RepositoryRevision {
+            commit,
+            entries: tree.entries,
+            candidates,
+        };
+        self.store_repository_revision(key, revision.clone());
+        Ok(revision)
+    }
+
+    fn remember_repository_revision(
+        &self,
+        request: &GithubRequest,
+        requested_ref: &str,
+        commit: &ResolvedCommit,
+        entries: Vec<GithubTreeEntry>,
+        candidates: Vec<GithubRepositoryCandidate>,
+    ) {
+        self.store_repository_revision(
+            RepositoryRevisionKey {
+                owner: request.owner.clone(),
+                repository: request.repository.clone(),
+                requested_ref: requested_ref.into(),
+                resolved_sha: commit.sha.clone(),
+            },
+            RepositoryRevision {
+                commit: commit.clone(),
+                entries,
+                candidates,
+            },
+        );
+    }
+
+    fn store_repository_revision(&self, key: RepositoryRevisionKey, revision: RepositoryRevision) {
+        let mut revisions = self
+            .repository_revisions
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if !revisions.contains_key(&key) && revisions.len() >= MAX_CACHED_REPOSITORY_REVISIONS {
+            revisions.clear();
+        }
+        revisions.insert(key, revision);
+    }
+
     fn resolve_target_tree(
         &self,
         request: &GithubRequest,
@@ -731,6 +1251,69 @@ impl CandidateStager {
     }
 }
 
+fn candidate_files_for_directory(directory: &Path) -> Result<Vec<CandidateFile>, CandidateError> {
+    let metadata = fs::symlink_metadata(directory).map_err(CandidateError::Io)?;
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Err(CandidateError::InvalidLocalDirectory);
+    }
+    let root = fs::canonicalize(directory).map_err(CandidateError::Io)?;
+    let mut inputs = Vec::new();
+    collect_local_files(&root, &root, &mut inputs)?;
+    require_skill_document(inputs.iter().map(|input| input.relative.as_str()))?;
+    inputs.sort_by(|left, right| left.relative.cmp(&right.relative));
+    let mut files = Vec::with_capacity(inputs.len());
+    let mut total_bytes = 0usize;
+    for input in inputs {
+        let bytes = read_local_file(&root, &input)?;
+        total_bytes = checked_total(total_bytes, bytes.len())?;
+        files.push(CandidateFile {
+            path: input.relative,
+            size: bytes.len(),
+            sha256: sha256(&bytes),
+            executable: input.executable,
+        });
+    }
+    Ok(files)
+}
+
+fn candidate_hash(files: &[CandidateFile]) -> String {
+    let fingerprint = files
+        .iter()
+        .map(|file| {
+            format!(
+                "{}:{}:{}:{}",
+                file.path, file.size, file.sha256, file.executable
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    sha256(fingerprint.as_bytes())
+}
+
+fn classify_github_update(
+    local_hash: &str,
+    remote_hash: &str,
+    installed_hash: Option<&str>,
+    installed_sha: Option<&str>,
+    remote_sha: &str,
+) -> &'static str {
+    if local_hash == remote_hash {
+        return "identical";
+    }
+    match (installed_hash, installed_sha) {
+        (Some(installed_hash), Some(installed_sha)) if local_hash == installed_hash => {
+            if installed_sha == remote_sha {
+                "localMismatch"
+            } else {
+                "remoteChanged"
+            }
+        }
+        (Some(_), Some(installed_sha)) if installed_sha == remote_sha => "localChanged",
+        (Some(_), Some(_)) => "diverged",
+        _ => "differentUnknown",
+    }
+}
+
 #[derive(Clone)]
 struct LocalInput {
     relative: String,
@@ -790,6 +1373,9 @@ fn collect_local_files(
     let mut entries = fs::read_dir(directory)?.collect::<Result<Vec<_>, _>>()?;
     entries.sort_by_key(|entry| entry.file_name());
     for entry in entries {
+        if is_ignored_skill_metadata_name(&entry.file_name()) {
+            continue;
+        }
         let path = entry.path();
         let relative = relative_string(root, &path)?;
         let metadata = fs::symlink_metadata(&path)?;
@@ -852,6 +1438,9 @@ fn github_inputs(entries: Vec<GithubTreeEntry>) -> Result<Vec<GithubInput>, Cand
             return Err(CandidateError::UnsafeEntry(entry.path));
         }
         let relative = validated_relative_string(&entry.path)?;
+        if is_ignored_skill_metadata_path(&relative) {
+            continue;
+        }
         let declared_size = entry
             .size
             .and_then(|size| usize::try_from(size).ok())
@@ -868,6 +1457,137 @@ fn github_inputs(entries: Vec<GithubTreeEntry>) -> Result<Vec<GithubInput>, Cand
     validate_unique_paths(files.iter().map(|file| file.relative.as_str()))?;
     files.sort_by(|left, right| left.relative.cmp(&right.relative));
     Ok(files)
+}
+
+fn repository_candidate_entries(
+    entries: &[GithubTreeEntry],
+    candidates: &[GithubRepositoryCandidate],
+    skill_path: &str,
+) -> Vec<GithubTreeEntry> {
+    if skill_path.is_empty() {
+        let nested_paths = candidates
+            .iter()
+            .filter(|candidate| !candidate.repository_root)
+            .map(|candidate| candidate.skill_path.as_str())
+            .collect::<Vec<_>>();
+        return entries
+            .iter()
+            .filter(|entry| {
+                !nested_paths
+                    .iter()
+                    .any(|path| entry.path == *path || entry.path.starts_with(&format!("{path}/")))
+            })
+            .cloned()
+            .collect();
+    }
+
+    let prefix = format!("{skill_path}/");
+    entries
+        .iter()
+        .filter_map(|entry| {
+            let relative = entry.path.strip_prefix(&prefix)?;
+            if relative.is_empty() {
+                return None;
+            }
+            let mut relative_entry = entry.clone();
+            relative_entry.path = relative.into();
+            Some(relative_entry)
+        })
+        .collect()
+}
+
+fn discover_repository_candidates(
+    entries: Vec<GithubTreeEntry>,
+) -> Result<Vec<GithubRepositoryCandidate>, CandidateError> {
+    let mut candidates = Vec::new();
+    let mut seen = HashSet::new();
+    for entry in entries {
+        let Some((skill_path, directory_name, repository_root)) =
+            conventional_repository_candidate_path(&entry.path)
+        else {
+            continue;
+        };
+        let path = validated_relative_string(&entry.path)?;
+        // A case-variant conventional document is ambiguous on case-insensitive
+        // filesystems. Reject it instead of silently treating it as unrelated.
+        if path != candidate_document_path(&skill_path) {
+            return Err(CandidateError::UnsafeEntry(entry.path));
+        }
+        if entry.kind != "blob"
+            || !matches!(entry.mode.as_str(), "100644" | "100755")
+            || !valid_sha(&entry.sha)
+            || entry.size.is_none()
+        {
+            return Err(CandidateError::UnsafeEntry(entry.path));
+        }
+        let key = skill_path.to_lowercase();
+        if !seen.insert(key) {
+            return Err(CandidateError::UnsafeEntry(entry.path));
+        }
+        if candidates.len() >= MAX_REPOSITORY_SKILLS {
+            return Err(CandidateError::TooManyRepositorySkills);
+        }
+        candidates.push(GithubRepositoryCandidate {
+            skill_path,
+            directory_name,
+            repository_root,
+        });
+    }
+    candidates.sort_by(|left, right| {
+        right
+            .repository_root
+            .cmp(&left.repository_root)
+            .then_with(|| left.skill_path.cmp(&right.skill_path))
+    });
+    if candidates.is_empty() {
+        Err(CandidateError::NoRepositorySkills)
+    } else {
+        Ok(candidates)
+    }
+}
+
+fn conventional_repository_candidate_path(path: &str) -> Option<(String, String, bool)> {
+    let parts = path.split('/').collect::<Vec<_>>();
+    match parts.as_slice() {
+        [document] if document.eq_ignore_ascii_case("SKILL.md") => {
+            Some((String::new(), "SKILL.md".into(), true))
+        }
+        [root, child, document]
+            if root.eq_ignore_ascii_case("skills")
+                && document.eq_ignore_ascii_case("SKILL.md")
+                && valid_path_atom(child) =>
+        {
+            Some((format!("skills/{child}"), (*child).into(), false))
+        }
+        [root, category, child, document]
+            if root.eq_ignore_ascii_case("skills")
+                && document.eq_ignore_ascii_case("SKILL.md")
+                && valid_path_atom(category)
+                && valid_path_atom(child) =>
+        {
+            Some((format!("skills/{category}/{child}"), (*child).into(), false))
+        }
+        _ => None,
+    }
+}
+
+fn candidate_document_path(skill_path: &str) -> String {
+    join_source_path(skill_path, "SKILL.md")
+}
+
+fn is_conventional_repository_skill_path(skill_path: &str) -> bool {
+    if skill_path.is_empty() {
+        return true;
+    }
+    let parts = skill_path.split('/').collect::<Vec<_>>();
+    matches!(
+        parts.as_slice(),
+        ["skills", child] if valid_path_atom(child)
+    ) || matches!(
+        parts.as_slice(),
+        ["skills", category, child]
+            if valid_path_atom(category) && valid_path_atom(child)
+    )
 }
 
 fn validate_file_slot(count: usize, size: u64, path: &str) -> Result<(), CandidateError> {
@@ -1019,14 +1739,33 @@ fn install_preview(
 ) -> Result<CandidateInstallPreview, super::WorkspaceError> {
     let name = review.audit.document.name.clone();
     let destination = canonical_intended_path(&workspace.roots().personal)?.join(&name);
-    let conflict = if super::valid_name(&name) {
+    let exact_match = if super::valid_name(&name) {
+        exact_name_match(workspace, &name, &review.manifest.candidate_hash)?
+    } else {
+        None
+    };
+    let conflict = if exact_match.is_none() && super::valid_name(&name) {
         workspace.find_name_conflict(&name)?
     } else {
         None
     };
-    let can_install = review.compatibility.status != "incompatible"
-        && review.audit.verdict != "block"
-        && conflict.is_none();
+    let structurally_blocked =
+        review.compatibility.status == "incompatible" || review.audit.verdict == "block";
+    let classification = if structurally_blocked {
+        "blocked"
+    } else if exact_match.is_some() {
+        "identical"
+    } else if conflict
+        .as_ref()
+        .is_some_and(|item| matches!(item.source.as_str(), "system" | "plugin"))
+    {
+        "managedConflict"
+    } else if conflict.is_some() {
+        "userConflict"
+    } else {
+        "new"
+    };
+    let can_install = matches!(classification, "new" | "identical");
     Ok(CandidateInstallPreview {
         install_revision: candidate_install_revision(
             &review.manifest,
@@ -1040,9 +1779,52 @@ fn install_preview(
         candidate_hash: review.manifest.candidate_hash.clone(),
         compatibility_status: review.compatibility.status.clone(),
         audit_verdict: review.audit.verdict.clone(),
+        classification: classification.into(),
         conflict,
         can_install,
     })
+}
+
+fn exact_name_match(
+    workspace: &super::Workspace,
+    name: &str,
+    candidate_hash_value: &str,
+) -> Result<Option<super::InternalSkill>, super::WorkspaceError> {
+    for skill in workspace.cached_name_matches(name)? {
+        let Ok(files) = candidate_files_for_directory(&skill.directory) else {
+            continue;
+        };
+        if candidate_hash(&files) == candidate_hash_value {
+            return Ok(Some(skill));
+        }
+    }
+    Ok(None)
+}
+
+fn identical_install_result(
+    snapshot: &VerifiedCandidateSnapshot,
+    skill: super::InternalSkill,
+) -> CandidateInstallResult {
+    let installed_id = skill.summary.id.clone();
+    let destination = skill.directory.display().to_string();
+    let detail = super::SkillDetail {
+        content_hash: super::hash(&skill.markdown),
+        summary: skill.summary,
+        markdown: skill.markdown,
+        document: skill.document,
+        editable: skill.source == super::Source::Personal,
+    };
+    CandidateInstallResult {
+        status: "skippedIdentical".into(),
+        installed_id,
+        skill: Some(detail),
+        destination,
+        installed_files: 0,
+        candidate_hash: snapshot.review.manifest.candidate_hash.clone(),
+        catalog_refresh_needed: false,
+        restart_recommended: false,
+        provenance_recorded: false,
+    }
 }
 
 fn canonical_intended_path(path: &Path) -> Result<PathBuf, super::WorkspaceError> {
@@ -1121,6 +1903,9 @@ fn collect_staged_file_paths(
         .map_err(|_| CandidateError::ChangedSession)?;
     entries.sort_by_key(|entry| entry.file_name());
     for entry in entries {
+        if is_ignored_skill_metadata_name(&entry.file_name()) {
+            continue;
+        }
         let path = entry.path();
         let metadata = fs::symlink_metadata(&path).map_err(|_| CandidateError::ChangedSession)?;
         if metadata.file_type().is_symlink() {
@@ -1844,6 +2629,12 @@ mod tests {
         trees: Mutex<HashMap<(String, bool), GithubTree>>,
         blobs: Mutex<HashMap<String, Vec<u8>>>,
         downloads: Mutex<Vec<(String, String)>>,
+        default_branch_calls: Mutex<usize>,
+        resolved_references: Mutex<Vec<String>>,
+        tree_calls: Mutex<Vec<(String, bool)>>,
+        download_delay: Duration,
+        active_downloads: AtomicUsize,
+        max_concurrent_downloads: AtomicUsize,
     }
 
     impl GithubTransport for FakeGithub {
@@ -1852,6 +2643,7 @@ mod tests {
             _owner: &str,
             _repository: &str,
         ) -> Result<String, CandidateError> {
+            *self.default_branch_calls.lock().unwrap() += 1;
             Ok(self.default_branch.clone())
         }
 
@@ -1859,8 +2651,12 @@ mod tests {
             &self,
             _owner: &str,
             _repository: &str,
-            _reference: &str,
+            reference: &str,
         ) -> Result<ResolvedCommit, CandidateError> {
+            self.resolved_references
+                .lock()
+                .unwrap()
+                .push(reference.into());
             self.commit
                 .clone()
                 .ok_or_else(|| CandidateError::Github("missing fake commit".into()))
@@ -1873,6 +2669,10 @@ mod tests {
             tree_sha: &str,
             recursive: bool,
         ) -> Result<GithubTree, CandidateError> {
+            self.tree_calls
+                .lock()
+                .unwrap()
+                .push((tree_sha.into(), recursive));
             self.trees
                 .lock()
                 .unwrap()
@@ -1890,16 +2690,25 @@ mod tests {
             _blob_sha: &str,
             _expected_size: usize,
         ) -> Result<Vec<u8>, CandidateError> {
+            let active = self.active_downloads.fetch_add(1, Ordering::AcqRel) + 1;
+            self.max_concurrent_downloads
+                .fetch_max(active, Ordering::AcqRel);
             self.downloads
                 .lock()
                 .unwrap()
                 .push((commit_sha.into(), path.into()));
-            self.blobs
+            if !self.download_delay.is_zero() {
+                std::thread::sleep(self.download_delay);
+            }
+            let result = self
+                .blobs
                 .lock()
                 .unwrap()
                 .get(path)
                 .cloned()
-                .ok_or_else(|| CandidateError::Github("missing fake blob".into()))
+                .ok_or_else(|| CandidateError::Github("missing fake blob".into()));
+            self.active_downloads.fetch_sub(1, Ordering::AcqRel);
+            result
         }
     }
 
@@ -2167,7 +2976,7 @@ mod tests {
     }
 
     #[test]
-    fn install_rechecks_conflicts_after_preview_and_never_overwrites() {
+    fn install_classifies_conflicts_and_rechecks_them_without_overwriting() {
         let directory = TempDir::new().unwrap();
         let (stager, workspace, manifest) =
             installable_candidate(&directory, "demo-conflict", false);
@@ -2177,6 +2986,12 @@ mod tests {
         let conflict = directory.path().join("codex/skills/demo-conflict");
         fs::create_dir_all(&conflict).unwrap();
         fs::write(conflict.join("keep.txt"), "existing content").unwrap();
+
+        let conflict_preview = stager
+            .preview_install(&workspace, &manifest.session_id, &manifest.candidate_hash)
+            .unwrap();
+        assert_eq!(conflict_preview.classification, "userConflict");
+        assert!(!conflict_preview.can_install);
 
         assert!(matches!(
             stager.install(
@@ -2197,7 +3012,7 @@ mod tests {
     }
 
     #[test]
-    fn install_rejects_blocked_documents_and_second_installations() {
+    fn install_rejects_blocked_documents_and_skips_identical_retries() {
         let directory = TempDir::new().unwrap();
         let blocked_source = directory.path().join("blocked-source");
         fs::create_dir_all(&blocked_source).unwrap();
@@ -2223,6 +3038,7 @@ mod tests {
         let preview = stager
             .preview_install(&workspace, &manifest.session_id, &manifest.candidate_hash)
             .unwrap();
+        assert_eq!(preview.classification, "new");
         stager
             .install(
                 &workspace,
@@ -2231,17 +3047,23 @@ mod tests {
                 &preview.install_revision,
             )
             .unwrap();
-        assert!(matches!(
-            stager.install(
+        let retry_preview = stager
+            .preview_install(&workspace, &manifest.session_id, &manifest.candidate_hash)
+            .unwrap();
+        assert_eq!(retry_preview.classification, "identical");
+        assert!(retry_preview.can_install);
+        assert!(retry_preview.conflict.is_none());
+        let retry = stager
+            .install(
                 &workspace,
                 &manifest.session_id,
                 &manifest.candidate_hash,
-                &preview.install_revision
-            ),
-            Err(CandidateInstallError::Workspace(
-                super::super::WorkspaceError::NameConflict { .. }
-            ))
-        ));
+                &retry_preview.install_revision,
+            )
+            .unwrap();
+        assert_eq!(retry.status, "skippedIdentical");
+        assert_eq!(retry.installed_files, 0);
+        assert_eq!(workspace.list_skills().unwrap().counts.personal, 1);
     }
 
     #[cfg(unix)]
@@ -2385,6 +3207,105 @@ mod tests {
     }
 
     #[test]
+    fn file_sync_data_allows_remote_adds_replacements_and_confirmed_absence() {
+        let directory = TempDir::new().unwrap();
+        let source = directory.path().join("source");
+        fs::create_dir_all(&source).unwrap();
+        fs::write(source.join("SKILL.md"), "---\nname: demo\n---\n").unwrap();
+        fs::write(source.join("new.txt"), "remote\n").unwrap();
+        let stager = stager(&directory, Arc::new(FakeGithub::default()));
+        let manifest = stager.stage_local(&source).unwrap();
+        let added = stager
+            .file_sync_data(
+                &manifest.session_id,
+                &manifest.candidate_hash,
+                "new.txt",
+                CandidateFileSyncAction::Add,
+            )
+            .unwrap()
+            .unwrap();
+        assert_eq!(added.0, b"remote\n");
+        let replacement = stager
+            .file_sync_data(
+                &manifest.session_id,
+                &manifest.candidate_hash,
+                "SKILL.md",
+                CandidateFileSyncAction::Replace,
+            )
+            .unwrap()
+            .unwrap();
+        assert_eq!(replacement.0, b"---\nname: demo\n---\n");
+        assert!(matches!(
+            stager.file_sync_data(
+                &manifest.session_id,
+                &manifest.candidate_hash,
+                "new.txt",
+                CandidateFileSyncAction::Delete,
+            ),
+            Err(CandidateError::InvalidFileSync)
+        ));
+        assert!(stager
+            .directory_matches(&manifest.session_id, &manifest.candidate_hash, &source,)
+            .unwrap());
+        assert!(stager
+            .file_sync_data(
+                &manifest.session_id,
+                &manifest.candidate_hash,
+                "missing.txt",
+                CandidateFileSyncAction::Delete,
+            )
+            .unwrap()
+            .is_none());
+        assert!(matches!(
+            stager.file_sync_data(
+                &manifest.session_id,
+                &manifest.candidate_hash,
+                "SKILL.md",
+                CandidateFileSyncAction::Delete,
+            ),
+            Err(CandidateError::InvalidFileSync)
+        ));
+    }
+
+    #[test]
+    fn file_sync_rejects_tampering_in_a_nonselected_staged_file() {
+        let directory = TempDir::new().unwrap();
+        let source = directory.path().join("source");
+        fs::create_dir_all(&source).unwrap();
+        fs::write(source.join("SKILL.md"), "---\nname: demo\n---\n").unwrap();
+        fs::write(source.join("selected.txt"), "remote\n").unwrap();
+        fs::write(source.join("other.txt"), "original\n").unwrap();
+        let stager = stager(&directory, Arc::new(FakeGithub::default()));
+        let manifest = stager.stage_local(&source).unwrap();
+        let staged_other = stager
+            .session_directory(&manifest.session_id)
+            .unwrap()
+            .join("other.txt");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&staged_other, fs::Permissions::from_mode(0o600)).unwrap();
+        }
+        #[cfg(not(unix))]
+        {
+            let mut permissions = fs::metadata(&staged_other).unwrap().permissions();
+            permissions.set_readonly(false);
+            fs::set_permissions(&staged_other, permissions).unwrap();
+        }
+        fs::write(staged_other, "tampered\n").unwrap();
+
+        assert!(matches!(
+            stager.file_sync_data(
+                &manifest.session_id,
+                &manifest.candidate_hash,
+                "selected.txt",
+                CandidateFileSyncAction::Replace,
+            ),
+            Err(CandidateError::ChangedSession)
+        ));
+    }
+
+    #[test]
     fn stages_github_files_at_the_resolved_commit() {
         let directory = TempDir::new().unwrap();
         let github = Arc::new(FakeGithub {
@@ -2456,6 +3377,667 @@ mod tests {
             .unwrap()
             .iter()
             .all(|(sha, _)| sha == &"a".repeat(40)));
+    }
+
+    #[test]
+    fn lists_conventional_repository_skills_without_downloading_blobs() {
+        let directory = TempDir::new().unwrap();
+        let github = Arc::new(FakeGithub {
+            default_branch: "main".into(),
+            commit: Some(ResolvedCommit {
+                sha: "a".repeat(40),
+                root_tree_sha: "root".into(),
+            }),
+            ..FakeGithub::default()
+        });
+        github.trees.lock().unwrap().insert(
+            ("root".into(), true),
+            GithubTree {
+                entries: vec![
+                    tree_entry("README.md", "100644", "blob", "readme", Some(1)),
+                    tree_entry("SKILL.md", "100644", "blob", "root-skill", Some(5)),
+                    tree_entry(
+                        "skills/engineering/code-review/SKILL.md",
+                        "100644",
+                        "blob",
+                        "categorized-skill",
+                        Some(9),
+                    ),
+                    tree_entry(
+                        "skills/research/SKILL.md",
+                        "100644",
+                        "blob",
+                        "research-skill",
+                        Some(8),
+                    ),
+                    tree_entry(
+                        "skills/writing/SKILL.md",
+                        "100644",
+                        "blob",
+                        "writing-skill",
+                        Some(7),
+                    ),
+                    tree_entry(
+                        "skills/too/deep/demo/SKILL.md",
+                        "100644",
+                        "blob",
+                        "too-deep-skill",
+                        Some(7),
+                    ),
+                    tree_entry(
+                        "examples/demo/SKILL.md",
+                        "100644",
+                        "blob",
+                        "ignored-skill",
+                        Some(7),
+                    ),
+                    tree_entry(
+                        "unrelated/a/b/c/d/e/f/g/h/i/j/README.md",
+                        "100644",
+                        "blob",
+                        "deep-unrelated",
+                        Some(7),
+                    ),
+                ],
+                truncated: false,
+            },
+        );
+        let stager = stager(&directory, github.clone());
+
+        let listing = stager
+            .list_github_repository("https://github.com/owner/repo")
+            .unwrap();
+
+        assert_eq!(listing.repository, "owner/repo");
+        assert_eq!(listing.requested_ref, "main");
+        assert_eq!(listing.resolved_sha, "a".repeat(40));
+        assert_eq!(
+            listing
+                .candidates
+                .iter()
+                .map(|candidate| candidate.skill_path.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "",
+                "skills/engineering/code-review",
+                "skills/research",
+                "skills/writing"
+            ]
+        );
+        assert!(listing.candidates[0].repository_root);
+        assert!(github.downloads.lock().unwrap().is_empty());
+        assert_eq!(*github.default_branch_calls.lock().unwrap(), 1);
+        assert_eq!(
+            github.resolved_references.lock().unwrap().as_slice(),
+            &["main"]
+        );
+        assert_eq!(
+            github.tree_calls.lock().unwrap().as_slice(),
+            &[("root".into(), true)]
+        );
+    }
+
+    #[test]
+    fn repository_listing_stages_only_the_selected_path_at_its_listing_sha() {
+        let directory = TempDir::new().unwrap();
+        let github = Arc::new(FakeGithub {
+            default_branch: "main".into(),
+            commit: Some(ResolvedCommit {
+                sha: "a".repeat(40),
+                root_tree_sha: "root".into(),
+            }),
+            ..FakeGithub::default()
+        });
+        github.trees.lock().unwrap().insert(
+            ("root".into(), true),
+            GithubTree {
+                entries: vec![
+                    tree_entry(
+                        "skills/engineering/research/SKILL.md",
+                        "100644",
+                        "blob",
+                        "skill",
+                        Some(5),
+                    ),
+                    tree_entry(
+                        "skills/engineering/other/SKILL.md",
+                        "100644",
+                        "blob",
+                        "other",
+                        Some(5),
+                    ),
+                ],
+                truncated: false,
+            },
+        );
+        github.blobs.lock().unwrap().insert(
+            "skills/engineering/research/SKILL.md".into(),
+            b"skill".to_vec(),
+        );
+        let stager = stager(&directory, github.clone());
+        let listing = stager
+            .list_github_repository("https://github.com/owner/repo")
+            .unwrap();
+
+        let manifest = stager
+            .stage_github_repository_candidate(
+                "https://github.com/owner/repo",
+                &listing.requested_ref,
+                &listing.resolved_sha,
+                "skills/engineering/research",
+            )
+            .unwrap();
+
+        let CandidateSource::Github {
+            requested_ref,
+            resolved_sha,
+            skill_path,
+            ..
+        } = manifest.source
+        else {
+            panic!("expected GitHub provenance");
+        };
+        assert_eq!(requested_ref, "main");
+        assert_eq!(resolved_sha, "a".repeat(40));
+        assert_eq!(skill_path, "skills/engineering/research");
+        assert_eq!(
+            github.downloads.lock().unwrap().as_slice(),
+            &[(
+                "a".repeat(40),
+                "skills/engineering/research/SKILL.md".into()
+            )]
+        );
+        assert_eq!(
+            github.resolved_references.lock().unwrap().as_slice(),
+            &["main"]
+        );
+        assert_eq!(
+            github.tree_calls.lock().unwrap().as_slice(),
+            &[("root".into(), true)]
+        );
+
+        github.blobs.lock().unwrap().insert(
+            "skills/engineering/other/SKILL.md".into(),
+            b"other".to_vec(),
+        );
+        stager
+            .stage_github_repository_candidate(
+                "https://github.com/owner/repo",
+                &listing.requested_ref,
+                &listing.resolved_sha,
+                "skills/engineering/other",
+            )
+            .unwrap();
+        assert_eq!(
+            github.resolved_references.lock().unwrap().as_slice(),
+            &["main"]
+        );
+        assert_eq!(
+            github.tree_calls.lock().unwrap().as_slice(),
+            &[("root".into(), true)]
+        );
+        assert_eq!(github.downloads.lock().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn github_blob_downloads_are_bounded_and_manifest_order_is_deterministic() {
+        let directory = TempDir::new().unwrap();
+        let github = Arc::new(FakeGithub {
+            commit: Some(ResolvedCommit {
+                sha: "a".repeat(40),
+                root_tree_sha: "root".into(),
+            }),
+            download_delay: Duration::from_millis(20),
+            ..FakeGithub::default()
+        });
+        let mut entries = Vec::new();
+        for index in (0..10).rev() {
+            let path = if index == 0 {
+                "SKILL.md".into()
+            } else {
+                format!("references/{index}.md")
+            };
+            entries.push(tree_entry(
+                &path,
+                "100644",
+                "blob",
+                &format!("blob-{index}"),
+                Some(1),
+            ));
+            github.blobs.lock().unwrap().insert(path, vec![b'x']);
+        }
+        github.trees.lock().unwrap().insert(
+            ("root".into(), true),
+            GithubTree {
+                entries,
+                truncated: false,
+            },
+        );
+        let stager = stager(&directory, github.clone());
+
+        let manifest = stager
+            .stage_github("https://github.com/owner/repo/tree/main")
+            .unwrap();
+
+        let paths = manifest
+            .files
+            .iter()
+            .map(|file| file.path.as_str())
+            .collect::<Vec<_>>();
+        let mut sorted = paths.clone();
+        sorted.sort();
+        assert_eq!(paths, sorted);
+        assert_eq!(github.downloads.lock().unwrap().len(), 10);
+        let max_concurrent = github.max_concurrent_downloads.load(Ordering::Acquire);
+        assert!(max_concurrent > 1);
+        assert!(max_concurrent <= MAX_CONCURRENT_GITHUB_BLOBS);
+    }
+
+    #[test]
+    fn concurrent_github_download_failure_leaves_no_staging_session() {
+        let directory = TempDir::new().unwrap();
+        let github = Arc::new(FakeGithub {
+            commit: Some(ResolvedCommit {
+                sha: "a".repeat(40),
+                root_tree_sha: "root".into(),
+            }),
+            download_delay: Duration::from_millis(10),
+            ..FakeGithub::default()
+        });
+        github.trees.lock().unwrap().insert(
+            ("root".into(), true),
+            GithubTree {
+                entries: vec![
+                    tree_entry("SKILL.md", "100644", "blob", "skill", Some(5)),
+                    tree_entry("references/good.md", "100644", "blob", "good", Some(4)),
+                    tree_entry(
+                        "references/missing.md",
+                        "100644",
+                        "blob",
+                        "missing",
+                        Some(7),
+                    ),
+                ],
+                truncated: false,
+            },
+        );
+        github
+            .blobs
+            .lock()
+            .unwrap()
+            .insert("SKILL.md".into(), b"skill".to_vec());
+        github
+            .blobs
+            .lock()
+            .unwrap()
+            .insert("references/good.md".into(), b"good".to_vec());
+        let stager = stager(&directory, github);
+
+        assert!(matches!(
+            stager.stage_github("https://github.com/owner/repo/tree/main"),
+            Err(CandidateError::Github(_))
+        ));
+        assert!(stager.store.sessions.lock().unwrap().is_empty());
+        assert_eq!(fs::read_dir(&stager.store.root).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn repository_root_staging_does_not_absorb_direct_nested_skills() {
+        let directory = TempDir::new().unwrap();
+        let github = Arc::new(FakeGithub {
+            commit: Some(ResolvedCommit {
+                sha: "a".repeat(40),
+                root_tree_sha: "root".into(),
+            }),
+            ..FakeGithub::default()
+        });
+        github.trees.lock().unwrap().insert(
+            ("root".into(), true),
+            GithubTree {
+                entries: vec![
+                    tree_entry("SKILL.md", "100644", "blob", "root", Some(4)),
+                    tree_entry(
+                        "skills/research/SKILL.md",
+                        "100644",
+                        "blob",
+                        "nested-skill",
+                        Some(6),
+                    ),
+                    tree_entry(
+                        "skills/research/run.sh",
+                        "120000",
+                        "blob",
+                        "nested-link",
+                        Some(3),
+                    ),
+                ],
+                truncated: false,
+            },
+        );
+        github
+            .blobs
+            .lock()
+            .unwrap()
+            .insert("SKILL.md".into(), b"root".to_vec());
+        let stager = stager(&directory, github.clone());
+
+        let manifest = stager
+            .stage_github_repository_candidate(
+                "https://github.com/owner/repo",
+                "main",
+                &"a".repeat(40),
+                "",
+            )
+            .unwrap();
+
+        assert_eq!(
+            manifest
+                .files
+                .iter()
+                .map(|file| file.path.as_str())
+                .collect::<Vec<_>>(),
+            vec!["SKILL.md"]
+        );
+        assert_eq!(
+            github.downloads.lock().unwrap().as_slice(),
+            &[("a".repeat(40), "SKILL.md".into())]
+        );
+    }
+
+    #[test]
+    fn repository_listing_rejects_case_collisions_and_truncation_before_download() {
+        assert!(matches!(
+            discover_repository_candidates(vec![
+                tree_entry("skills/demo/SKILL.md", "100644", "blob", "one", Some(1)),
+                tree_entry("skills/DEMO/SKILL.md", "100644", "blob", "two", Some(1)),
+            ]),
+            Err(CandidateError::UnsafeEntry(_))
+        ));
+
+        let directory = TempDir::new().unwrap();
+        let github = Arc::new(FakeGithub {
+            default_branch: "main".into(),
+            commit: Some(ResolvedCommit {
+                sha: "a".repeat(40),
+                root_tree_sha: "root".into(),
+            }),
+            ..FakeGithub::default()
+        });
+        github.trees.lock().unwrap().insert(
+            ("root".into(), true),
+            GithubTree {
+                entries: vec![],
+                truncated: true,
+            },
+        );
+        let stager = stager(&directory, github.clone());
+        assert!(matches!(
+            stager.list_github_repository("https://github.com/owner/repo"),
+            Err(CandidateError::TruncatedTree)
+        ));
+        assert!(github.downloads.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn repository_listing_rejects_empty_and_oversized_results() {
+        assert!(matches!(
+            discover_repository_candidates(Vec::new()),
+            Err(CandidateError::NoRepositorySkills)
+        ));
+        let entries = (0..=MAX_REPOSITORY_SKILLS)
+            .map(|index| {
+                tree_entry(
+                    &format!("skills/skill-{index}/SKILL.md"),
+                    "100644",
+                    "blob",
+                    &format!("skill-{index}"),
+                    Some(1),
+                )
+            })
+            .collect();
+        assert!(matches!(
+            discover_repository_candidates(entries),
+            Err(CandidateError::TooManyRepositorySkills)
+        ));
+    }
+
+    #[test]
+    fn explicit_ref_repository_listing_skips_default_branch_lookup() {
+        let directory = TempDir::new().unwrap();
+        let github = Arc::new(FakeGithub {
+            commit: Some(ResolvedCommit {
+                sha: "a".repeat(40),
+                root_tree_sha: "root".into(),
+            }),
+            ..FakeGithub::default()
+        });
+        github.trees.lock().unwrap().insert(
+            ("root".into(), true),
+            GithubTree {
+                entries: vec![tree_entry(
+                    "skills/demo/SKILL.md",
+                    "100644",
+                    "blob",
+                    "skill",
+                    Some(1),
+                )],
+                truncated: false,
+            },
+        );
+        let stager = stager(&directory, github.clone());
+
+        let listing = stager
+            .list_github_repository("https://github.com/owner/repo/tree/main")
+            .unwrap();
+
+        assert_eq!(listing.requested_ref, "main");
+        assert_eq!(*github.default_branch_calls.lock().unwrap(), 0);
+        assert_eq!(
+            github.resolved_references.lock().unwrap().as_slice(),
+            &["main"]
+        );
+        assert!(github.downloads.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn local_candidate_fingerprint_matches_staged_candidate_semantics() {
+        let directory = TempDir::new().unwrap();
+        let source = directory.path().join("source");
+        fs::create_dir_all(source.join("scripts")).unwrap();
+        fs::write(source.join("SKILL.md"), "---\nname: demo\n---\n").unwrap();
+        fs::write(source.join("scripts/run.sh"), "echo hello\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(
+                source.join("scripts/run.sh"),
+                fs::Permissions::from_mode(0o755),
+            )
+            .unwrap();
+        }
+        let stager = stager(&directory, Arc::new(FakeGithub::default()));
+        let manifest = stager.stage_local(&source).unwrap();
+        assert_eq!(
+            candidate_hash(&candidate_files_for_directory(&source).unwrap()),
+            manifest.candidate_hash
+        );
+    }
+
+    #[test]
+    fn local_candidate_fingerprint_ignores_finder_metadata() {
+        let directory = TempDir::new().unwrap();
+        let source = directory.path().join("source");
+        fs::create_dir_all(source.join("scripts")).unwrap();
+        fs::write(source.join("SKILL.md"), "---\nname: demo\n---\n").unwrap();
+        fs::write(source.join("scripts/run.sh"), "echo hello\n").unwrap();
+        let before = candidate_files_for_directory(&source).unwrap();
+        fs::write(source.join(".DS_Store"), b"root finder metadata").unwrap();
+        fs::write(source.join("scripts/.DS_Store"), b"nested finder metadata").unwrap();
+        let after = candidate_files_for_directory(&source).unwrap();
+        assert_eq!(candidate_hash(&after), candidate_hash(&before));
+        assert_eq!(after.len(), before.len());
+        assert!(after
+            .iter()
+            .zip(&before)
+            .all(|(after, before)| after.path == before.path
+                && after.size == before.size
+                && after.sha256 == before.sha256
+                && after.executable == before.executable));
+        assert!(after.iter().all(|file| !file.path.contains(".DS_Store")));
+    }
+
+    #[test]
+    fn github_candidate_tree_ignores_finder_metadata() {
+        let files = github_inputs(vec![
+            tree_entry("SKILL.md", "100644", "blob", "skill", Some(5)),
+            tree_entry(".DS_Store", "100644", "blob", "finder", Some(9)),
+            tree_entry(
+                "references/.DS_Store",
+                "100644",
+                "blob",
+                "nested-finder",
+                Some(13),
+            ),
+        ])
+        .unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].relative, "SKILL.md");
+        assert!(matches!(
+            github_inputs(vec![tree_entry(
+                "../.DS_Store",
+                "100644",
+                "blob",
+                "invalid-finder",
+                Some(13),
+            )]),
+            Err(CandidateError::UnsafeEntry(_))
+        ));
+    }
+
+    #[test]
+    fn update_classification_separates_remote_changes_from_local_edits() {
+        let installed_hash = "installed";
+        let installed_sha = "a".repeat(40);
+        let remote_sha = "b".repeat(40);
+        assert_eq!(
+            classify_github_update(
+                installed_hash,
+                "remote",
+                Some(installed_hash),
+                Some(&installed_sha),
+                &remote_sha,
+            ),
+            "remoteChanged"
+        );
+        assert_eq!(
+            classify_github_update(
+                "locally-edited",
+                installed_hash,
+                Some(installed_hash),
+                Some(&installed_sha),
+                &installed_sha,
+            ),
+            "localChanged"
+        );
+        assert_eq!(
+            classify_github_update("locally-edited", "remote", None, None, &remote_sha,),
+            "differentUnknown"
+        );
+        assert_eq!(
+            classify_github_update("same", "same", None, None, &remote_sha),
+            "identical"
+        );
+    }
+
+    #[test]
+    fn checks_a_confirmed_github_source_without_mutating_the_local_skill() {
+        let directory = TempDir::new().unwrap();
+        let codex_home = directory.path().join("codex");
+        let local = codex_home.join("skills/demo");
+        fs::create_dir_all(&local).unwrap();
+        let local_markdown = "---\nname: demo\ndescription: Use when checking updates.\n---\n";
+        fs::write(local.join("SKILL.md"), local_markdown).unwrap();
+        fs::write(local.join(".DS_Store"), b"finder metadata").unwrap();
+        let workspace = super::super::Workspace::new(codex_home);
+        let id = workspace
+            .list_skills()
+            .unwrap()
+            .skills
+            .into_iter()
+            .find(|skill| skill.source == "personal")
+            .unwrap()
+            .id;
+        let remote_markdown = local_markdown;
+        let github = Arc::new(FakeGithub {
+            default_branch: "main".into(),
+            commit: Some(ResolvedCommit {
+                sha: "b".repeat(40),
+                root_tree_sha: "root".into(),
+            }),
+            ..FakeGithub::default()
+        });
+        github.trees.lock().unwrap().insert(
+            ("root".into(), false),
+            GithubTree {
+                entries: vec![tree_entry("skills", "040000", "tree", "skills", None)],
+                truncated: false,
+            },
+        );
+        github.trees.lock().unwrap().insert(
+            ("skills".into(), false),
+            GithubTree {
+                entries: vec![tree_entry("demo", "040000", "tree", "demo", None)],
+                truncated: false,
+            },
+        );
+        github.trees.lock().unwrap().insert(
+            ("demo".into(), true),
+            GithubTree {
+                entries: vec![tree_entry(
+                    "SKILL.md",
+                    "100644",
+                    "blob",
+                    "remote-skill",
+                    Some(remote_markdown.len() as u64),
+                )],
+                truncated: false,
+            },
+        );
+        github.blobs.lock().unwrap().insert(
+            "skills/demo/SKILL.md".into(),
+            remote_markdown.as_bytes().to_vec(),
+        );
+        let stager = stager(&directory, github);
+        let result = stager
+            .check_github_update(
+                &workspace,
+                &id,
+                &super::super::AcquisitionProvenance {
+                    kind: "github".into(),
+                    confidence: "confirmed".into(),
+                    repository: Some("owner/repo".into()),
+                    requested_ref: None,
+                    resolved_sha: None,
+                    skill_path: Some("skills/demo".into()),
+                    selected_path: None,
+                    candidate_hash: None,
+                    recorded_at: Some("2026-08-13T00:00:00Z".into()),
+                },
+            )
+            .unwrap();
+        assert_eq!(result.status, "identical");
+        assert!(result
+            .local_files
+            .iter()
+            .all(|file| !file.path.contains(".DS_Store")));
+        assert_eq!(result.remote_sha, "b".repeat(40));
+        assert_eq!(
+            fs::read_to_string(local.join("SKILL.md")).unwrap(),
+            local_markdown
+        );
+        assert!(stager
+            .review(&result.manifest.session_id, &result.manifest.candidate_hash)
+            .is_ok());
     }
 
     #[test]
@@ -2631,6 +4213,11 @@ mod tests {
                 Err(CandidateError::InvalidGithubUrl)
             ));
         }
+
+        let encoded_ref =
+            parse_github_url("https://github.com/owner/repo/tree/feature%2Fintake").unwrap();
+        assert_eq!(encoded_ref.requested_ref.as_deref(), Some("feature/intake"));
+        assert!(encoded_ref.skill_path.is_empty());
     }
 
     #[test]

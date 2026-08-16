@@ -5,6 +5,52 @@ export const desktop = {
   listSkills: () => invoke("list_skills"),
   refreshSkills: () => invoke("refresh_skills"),
   getSkill: (id) => invoke("get_skill", { id }),
+  getSkillPackage: (id) => invoke("get_skill_package", { id }),
+  readSkillPackageFile: (id, expectedRevision, path) =>
+    invoke("read_skill_package_file", { id, expectedRevision, path }),
+  inspectPackageImportSource: (selectedPath) =>
+    invoke("inspect_package_import_source", { selectedPath }),
+  previewSkillPackage: (id, expectedRevision, mutations) =>
+    invoke("preview_skill_package", { id, expectedRevision, mutations }),
+  saveSkillPackage: (id, expectedRevision, expectedProposedRevision, mutations) =>
+    invoke("save_skill_package", {
+      id,
+      expectedRevision,
+      expectedProposedRevision,
+      mutations
+    }),
+  previewSkillPackageDeepAudit: (id, expectedRevision, expectedProposedRevision, mutations) =>
+    invoke("preview_skill_package_deep_audit", {
+      id,
+      expectedRevision,
+      expectedProposedRevision,
+      mutations
+    }),
+  runSkillPackageDeepAudit: (
+    id,
+    expectedRevision,
+    expectedProposedRevision,
+    mutations,
+    selections,
+    expectedCandidateHash,
+    expectedProviderHash
+  ) => invoke("run_skill_package_deep_audit", {
+    request: {
+      id,
+      expectedRevision,
+      expectedProposedRevision,
+      mutations,
+      selections,
+      expectedCandidateHash,
+      expectedProviderHash
+    }
+  }),
+  listCollections: () => invoke("list_collections"),
+  createCollection: (name) => invoke("create_collection", { name }),
+  renameCollection: (id, name) => invoke("rename_collection", { id, name }),
+  deleteCollection: (id) => invoke("delete_collection", { id }),
+  setSkillCollectionMemberships: (skillId, collectionIds) =>
+    invoke("set_skill_collection_memberships", { skillId, collectionIds }),
   auditDraft: (id, markdown) => invoke("audit_draft", { id, markdown }),
   saveDraft: (id, markdown, expectedHash) => invoke("save_draft", { id, markdown, expectedHash }),
   previewNewSkill: (markdown) => invoke("preview_new_skill", { markdown }),
@@ -53,11 +99,55 @@ export const desktop = {
   }),
   discardImportedBundle: (sessionId) => invoke("discard_imported_bundle", { sessionId }),
   stageGithubCandidate: (sourceUrl) => invoke("stage_github_candidate", { sourceUrl }),
+  listGithubRepositoryCandidates: (sourceUrl) =>
+    invoke("list_github_repository_candidates", { sourceUrl }),
+  stageGithubRepositoryCandidate: (sourceUrl, requestedRef, resolvedSha, skillPath) =>
+    invoke("stage_github_repository_candidate", {
+      sourceUrl,
+      requestedRef,
+      resolvedSha,
+      skillPath
+    }),
+  checkGithubSkillUpdate: (id) => invoke("check_github_skill_update", { id }),
   stageLocalCandidate: (selectedPath) => invoke("stage_local_candidate", { selectedPath }),
   getStagedCandidateReview: (sessionId, expectedCandidateHash) =>
     invoke("get_staged_candidate_review", { sessionId, expectedCandidateHash }),
   readStagedCandidateFile: (sessionId, expectedCandidateHash, path) =>
     invoke("read_staged_candidate_file", { sessionId, expectedCandidateHash, path }),
+  previewStagedCandidateFileSync: (
+    id,
+    sessionId,
+    expectedCandidateHash,
+    expectedLocalRevision,
+    path,
+    action
+  ) => invoke("preview_staged_candidate_file_sync", {
+    id,
+    sessionId,
+    expectedCandidateHash,
+    expectedLocalRevision,
+    path,
+    action
+  }),
+  applyStagedCandidateFileSync: (
+    id,
+    sessionId,
+    expectedCandidateHash,
+    expectedLocalRevision,
+    expectedProposedRevision,
+    path,
+    action
+  ) => invoke("apply_staged_candidate_file_sync", {
+    request: {
+      id,
+      sessionId,
+      expectedCandidateHash,
+      expectedLocalRevision,
+      expectedProposedRevision,
+      path,
+      action
+    }
+  }),
   previewStagedCandidateInstall: (sessionId, expectedCandidateHash) =>
     invoke("preview_staged_candidate_install", { sessionId, expectedCandidateHash }),
   installStagedCandidate: (sessionId, expectedCandidateHash, expectedInstallRevision) =>

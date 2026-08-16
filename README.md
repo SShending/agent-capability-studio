@@ -40,6 +40,11 @@ The shipped application does not start a Node HTTP server or require Node.js.
   destination directories.
 - Permanently delete only archived Skills after typing the exact Skill name.
 - Keep system and plugin-managed Skills read-only.
+- Import one Skill from a local folder or public GitHub Skill URL. For a GitHub
+  repository containing multiple conventional Skills, list the root Skill and
+  bounded `skills/*/SKILL.md` and `skills/*/*/SKILL.md` entries at one fixed
+  commit, hide candidates already matched by reliable local provenance, then
+  review and confirm installation for each selected Skill separately.
 
 Audit results are evidence-based findings, not a security certificate or an
 absolute safety guarantee. Baseline Audit stays offline. Deep Audit sends the
