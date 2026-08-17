@@ -175,6 +175,12 @@ Tasks:
   launch of the exact candidate remain Task 5.2 acceptance gates. Full
   clean-machine workflow acceptance and publication remain Task 5.4 gates.
 - [ ] 5.3 Reconcile README, license, product screenshots, and limitations.
+  Documentation implementation completed on 2026-08-17: refreshed the English
+  README, added a complete Simplified Chinese README, SECURITY.md, and PRIVACY.md,
+  and added public-document link, metadata, secret/path, and credential-storage
+  regression tests. Existing screenshots contain the owner's local username and
+  absolute paths, so sanitized screenshots and the non-programmer walkthrough
+  remain acceptance work; they must be completed before publication.
 - [ ] 5.4 Run clean-machine acceptance and publish the v0.1 artifacts.
 
 ## Phase 6 - Skill Package Workspace And Collections

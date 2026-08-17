@@ -154,7 +154,8 @@ Implementation record (2026-08-17):
 
 ### Task 5.3 - Public Documentation And Repository Readiness
 
-- Status: pending.
+- Status: documentation implementation complete; sanitized screenshots and
+  human walkthrough pending.
 - Outcome: a non-programmer can understand the product boundary, install and use
   the app, understand cloud-data behavior and audit limitations, migrate Skills,
   report a security issue, and inspect the source license.
@@ -170,6 +171,22 @@ Implementation record (2026-08-17):
   metadata consistency, and screenshot asset validation.
 - Human verification: a non-programmer follows the README without requiring a
   terminal for application installation or ordinary use.
+
+Implementation record (2026-08-17):
+
+- Replaced the development-only README with a concise user-facing English guide
+  covering the Skill package workflow, audit boundaries, cloud-data consent,
+  passwordless local credential storage, trusted migration, product boundary,
+  and release state.
+- Added a complete [`README.zh-CN.md`](../../README.zh-CN.md),
+  [`SECURITY.md`](../../SECURITY.md), and [`PRIVACY.md`](../../PRIVACY.md).
+- Added `test/public-docs.test.mjs` to verify local Markdown links, MIT/version
+  metadata, known credential/path patterns, and the non-Keychain credential
+  description. The frontend test suite passes 66 tests.
+- The existing visual-QA screenshots include a local username and absolute
+  Skill paths. They remain ignored and must be redacted or regenerated with
+  neutral fixture data before publication; no private screenshot was added to
+  the repository.
 
 ### Task 5.4 - Clean-Machine Acceptance And Publication
 
