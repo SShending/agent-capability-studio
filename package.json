@@ -4,13 +4,30 @@
   "private": true,
   "type": "module",
   "description": "A Codex-first visual workspace for authoring, auditing, comparing, and migrating Agent Skills.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SShending/agent-capability-studio.git"
+  },
+  "engines": {
+    "node": "22.23.1"
+  },
   "scripts": {
     "dev": "tauri dev",
-    "test": "node --test test/*.test.mjs && npm run web:build && cargo test --manifest-path src-tauri/Cargo.toml --workspace",
+    "test": "npm run test:frontend && npm run web:build && npm run test:rust",
+    "test:frontend": "node --test test/*.test.mjs",
+    "test:rust": "cargo test --locked --manifest-path src-tauri/Cargo.toml --workspace",
+    "check:rust": "cargo check --locked --manifest-path src-tauri/Cargo.toml --workspace --all-targets",
+    "lint:rust": "cargo clippy --locked --manifest-path src-tauri/Cargo.toml --workspace --all-targets -- -D warnings",
     "web:dev": "vite",
     "web:build": "vite build",
     "desktop:dev": "tauri dev",
-    "desktop:build": "tauri build"
+    "desktop:build": "tauri build",
+    "release:check": "node scripts/check-release-config.mjs",
+    "release:build:unsigned": "tauri build --ci --no-sign --target universal-apple-darwin --bundles app,dmg",
+    "release:build:signed": "tauri build --ci --target universal-apple-darwin --bundles app,dmg",
+    "release:verify:unsigned": "node scripts/verify-release-artifacts.mjs --bundle-dir src-tauri/target/universal-apple-darwin/release/bundle --mode unsigned",
+    "release:verify:signed": "node scripts/verify-release-artifacts.mjs --bundle-dir src-tauri/target/universal-apple-darwin/release/bundle --mode signed"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.1",

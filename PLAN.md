@@ -165,7 +165,13 @@ Tasks:
   Simplified Chinese/English localization with a persistent interface-language
   setting. Do not expose a language selector until all common-path strings and
   error messages switch consistently.
-- [ ] 5.2 Add CI, release metadata, signing, notarization, and packaging.
+- [x] 5.2 Add CI, release metadata, signing, notarization, and packaging.
+  Automated release implementation accepted on 2026-08-17: the repository
+  pins Node 22.23.1 and Rust 1.88.0, separates unsigned CI from the protected
+  signed candidate workflow, and verifies universal app/DMG metadata. The
+  locked dependency set requires Rust 1.88, which is above the project's
+  Rust-1.85-or-later development floor. Real Apple signing, notarization,
+  clean-machine installation, and publication remain Task 5.4 gates.
 - [ ] 5.3 Reconcile README, license, product screenshots, and limitations.
 - [ ] 5.4 Run clean-machine acceptance and publish the v0.1 artifacts.
 

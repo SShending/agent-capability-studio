@@ -1,0 +1,108 @@
+name: Release candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing version tag to build, for example v0.1.0
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-candidate-${{ inputs.release_tag }}
+  cancel-in-progress: false
+
+jobs:
+  release-candidate:
+    name: Signed and notarized macOS candidate
+    runs-on: macos-14
+    timeout-minutes: 120
+    environment: release
+
+    steps:
+      - name: Check out exact release tag
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.release_tag }}
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install JavaScript dependencies
+        run: npm ci
+
+      - name: Install pinned Rust targets
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
+      - name: Verify tagged release configuration
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: npm run release:check -- --release-tag "$RELEASE_TAG"
+
+      - name: Run release tests
+        run: npm test
+
+      - name: Check and lint Rust workspace
+        run: |
+          npm run check:rust
+          npm run lint:rust
+
+      - name: Validate protected release credentials
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_API_KEY APPLE_API_ISSUER APPLE_API_KEY_P8; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::$name is not configured in the release environment"
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      - name: Prepare App Store Connect API key
+        shell: bash
+        env:
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          set -euo pipefail
+          key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY}.p8"
+          umask 077
+          printf '%s' "$APPLE_API_KEY_P8" > "$key_path"
+          chmod 600 "$key_path"
+          echo "APPLE_API_KEY_PATH=$key_path" >> "$GITHUB_ENV"
+
+      - name: Build, sign, notarize, and staple universal artifacts
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: npm run release:build:signed
+
+      - name: Verify signature, notarization, Gatekeeper, and checksum
+        run: npm run release:verify:signed
+
+      - name: Upload verified release candidate
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Agent-Skill-Studio-${{ inputs.release_tag }}-macOS
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+            src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg.sha256

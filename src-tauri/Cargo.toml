@@ -3,7 +3,10 @@ name = "agent-skill-studio"
 version = "0.1.0"
 description = "A local desktop workspace for Codex Skills."
 edition = "2021"
-rust-version = "1.85"
+rust-version = "1.88"
+license = "MIT"
+repository = "https://github.com/SShending/agent-capability-studio"
+homepage = "https://github.com/SShending/agent-capability-studio"
 
 [workspace]
 members = [".", "crates/skill-bundle-core"]

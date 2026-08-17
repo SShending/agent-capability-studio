@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    name: macOS checks and unsigned package
+    runs-on: macos-14
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install JavaScript dependencies
+        run: npm ci
+
+      - name: Install pinned Rust targets
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
+      - name: Verify release configuration
+        run: npm run release:check
+
+      - name: Test frontend
+        run: npm run test:frontend
+
+      - name: Build frontend
+        run: npm run web:build
+
+      - name: Check Rust workspace
+        run: npm run check:rust
+
+      - name: Test Rust workspace
+        run: npm run test:rust
+
+      - name: Lint Rust workspace
+        run: npm run lint:rust
+
+      - name: Build unsigned universal application and DMG
+        run: npm run release:build:unsigned
+
+      - name: Verify unsigned artifact metadata
+        run: npm run release:verify:unsigned

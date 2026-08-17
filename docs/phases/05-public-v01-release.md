@@ -105,7 +105,8 @@ may access signing credentials or publish artifacts.
 
 ### Task 5.2 - CI, Release Metadata, Signing, And Packaging
 
-- Status: pending.
+- Status: automated implementation complete; protected Apple candidate remains
+  part of Task 5.4.
 - Outcome: clean commits run deterministic checks, and an authorized release can
   produce a signed, notarized, stapled macOS installer with traceable version and
   checksum evidence.
@@ -119,6 +120,32 @@ may access signing credentials or publish artifacts.
   notarization result, staple validation, and artifact checksums.
 - Human verification: install and launch the exact release candidate outside the
   build tree without Gatekeeper bypass instructions.
+
+Implementation record (2026-08-17):
+
+- `.nvmrc` pins Node.js 22.23.1 and `rust-toolchain.toml` pins Rust 1.88.0.
+  The Cargo lockfile contains dependencies whose published MSRV is 1.88, so the
+  release pin was raised from the project's general Rust 1.85-or-later floor
+  instead of claiming a CI configuration that cannot build.
+- `release:check` verifies version, repository, MIT metadata, bundle targets,
+  the packaged macOS icon, macOS 13.0, hardened runtime, exact toolchain pins,
+  and (for the candidate) the checked-out version tag.
+- Pull-request CI has no credential access and builds an unsigned universal
+  `.app` and `.dmg`. The protected manual candidate workflow requires the
+  `release` environment, writes the App Store Connect `.p8` key with mode 0600,
+  runs Tauri signing/notarization/stapling, verifies Developer ID signatures,
+  Gatekeeper, and checksums, then uploads a temporary candidate artifact without
+  publishing a GitHub Release.
+- Automated evidence on the implementation revision: 60 frontend tests, 164
+  desktop-core tests, 24 Bundle-core tests, production frontend build, locked
+  Cargo check, warnings-denied Clippy, YAML parsing, and a successful universal
+  unsigned `.app`/`.dmg` build whose metadata verifier reported version 0.1.0,
+  macOS 13.0, x86_64+arm64, and a packaged `icon.icns`. The application icon,
+  packaged app icon, and DMG volume icon had the same SHA-256.
+- A signed Apple candidate was not run in this workspace because the protected
+  environment's certificate and App Store Connect credentials were not supplied.
+  Do not treat signing, notarization, stapling, Gatekeeper, or clean-machine
+  installation as passed until Task 5.4 records that evidence.
 
 ### Task 5.3 - Public Documentation And Repository Readiness
 

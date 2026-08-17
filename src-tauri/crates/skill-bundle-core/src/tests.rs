@@ -332,8 +332,7 @@ fn rejects_unknown_fields_duplicate_keys_and_versions() {
     assert_code(bytes, "INVALID_BUNDLE_MANIFEST");
 
     let duplicate = format!(
-        "{{\"format\":\"{}\",\"format\":\"{}\",\"formatVersion\":1,\"agentContract\":{{\"id\":\"codex\",\"version\":1}},\"skills\":[]}}",
-        BUNDLE_FORMAT, BUNDLE_FORMAT
+        "{{\"format\":\"{BUNDLE_FORMAT}\",\"format\":\"{BUNDLE_FORMAT}\",\"formatVersion\":1,\"agentContract\":{{\"id\":\"codex\",\"version\":1}},\"skills\":[]}}"
     );
     let mut bytes = bundle(&manifest, &[("SKILL.md", skill, false)]);
     replace_manifest(&mut bytes, duplicate.into_bytes());
