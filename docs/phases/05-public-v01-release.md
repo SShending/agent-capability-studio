@@ -105,8 +105,8 @@ may access signing credentials or publish artifacts.
 
 ### Task 5.2 - CI, Release Metadata, Signing, And Packaging
 
-- Status: automated implementation complete; protected Apple candidate remains
-  part of Task 5.4.
+- Status: automated implementation complete; signed candidate and human
+  verification pending.
 - Outcome: clean commits run deterministic checks, and an authorized release can
   produce a signed, notarized, stapled macOS installer with traceable version and
   checksum evidence.
@@ -136,16 +136,21 @@ Implementation record (2026-08-17):
   runs Tauri signing/notarization/stapling, verifies Developer ID signatures,
   Gatekeeper, and checksums, then uploads a temporary candidate artifact without
   publishing a GitHub Release.
-- Automated evidence on the implementation revision: 60 frontend tests, 164
+- Automated evidence on the implementation revision: 61 frontend tests, 164
   desktop-core tests, 24 Bundle-core tests, production frontend build, locked
   Cargo check, warnings-denied Clippy, YAML parsing, and a successful universal
   unsigned `.app`/`.dmg` build whose metadata verifier reported version 0.1.0,
   macOS 13.0, x86_64+arm64, and a packaged `icon.icns`. The application icon,
-  packaged app icon, and DMG volume icon had the same SHA-256.
+  packaged app icon, and DMG volume icon had the same SHA-256. The verifier
+  mounted the DMG read-only and matched its complete application directory
+  revision (`de41a9fe741ba74bf74d4159816b96a0cfb5e180135abe9473ccc2330d424a81`)
+  to the loose application that passed metadata checks.
 - A signed Apple candidate was not run in this workspace because the protected
   environment's certificate and App Store Connect credentials were not supplied.
   Do not treat signing, notarization, stapling, Gatekeeper, or clean-machine
-  installation as passed until Task 5.4 records that evidence.
+  installation as passed. Task 5.2 remains open until the exact signed candidate
+  installs and launches outside the build tree; Task 5.4 records the broader
+  clean-machine workflow and publication evidence.
 
 ### Task 5.3 - Public Documentation And Repository Readiness
 

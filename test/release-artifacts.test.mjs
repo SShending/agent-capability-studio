@@ -67,13 +67,14 @@ test("release verification rejects a bundle without exactly one DMG", async () =
   assert.match(result.stderr, /expected exactly one DMG artifact, found 0/);
 });
 
-test("unsigned release verification checks version, minimum macOS, and architectures", async () => {
+test("unsigned release verification rejects an invalid DMG after checking app metadata", async () => {
   const fixture = await unsignedBundle();
 
   const result = verify(fixture.bundle, "unsigned", fixture.root);
 
-  assert.equal(result.status, 0, result.stderr);
+  assert.notEqual(result.status, 0);
   assert.match(result.stdout, /version 0\.1\.0, macOS 13\.0, universal x86_64\+arm64/);
+  assert.match(result.stderr, /mounting DMG failed/);
 });
 
 test("signed release verification rejects unsigned artifacts before writing a checksum", async () => {

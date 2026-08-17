@@ -1,8 +1,10 @@
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { createReadStream } from "node:fs";
-import { access, readFile, readdir, writeFile } from "node:fs/promises";
-import { basename, resolve } from "node:path";
+import { access, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { basename, join, resolve } from "node:path";
+import { directoryRevision } from "./release-artifact-model.mjs";
 
 function argumentValue(name) {
   const index = process.argv.indexOf(name);
@@ -101,6 +103,53 @@ async function sha256(path) {
   return hash.digest("hex");
 }
 
+async function verifyDiskImageApplication(diskImage, application) {
+  const mountDirectory = await mkdtemp(join(tmpdir(), "agent-skill-studio-dmg-"));
+  let attached = false;
+  let failure = null;
+  let revision = null;
+
+  try {
+    run(
+      "/usr/bin/hdiutil",
+      ["attach", "-nobrowse", "-readonly", "-mountpoint", mountDirectory, diskImage],
+      "mounting DMG"
+    );
+    attached = true;
+    const mountedApplications = await matchingEntries(
+      mountDirectory,
+      (entry) => entry.isDirectory() && entry.name.endsWith(".app")
+    );
+    if (mountedApplications.length !== 1) {
+      throw new Error(
+        `expected exactly one application inside DMG, found ${mountedApplications.length}`
+      );
+    }
+
+    const [applicationRevision, mountedRevision] = await Promise.all([
+      directoryRevision(application),
+      directoryRevision(mountedApplications[0])
+    ]);
+    if (mountedRevision !== applicationRevision) {
+      throw new Error("application inside DMG does not match the verified application bundle");
+    }
+    revision = applicationRevision;
+  } catch (error) {
+    failure = error;
+  }
+
+  if (attached) {
+    const detach = commandResult("/usr/bin/hdiutil", ["detach", mountDirectory]);
+    if (detach.status !== 0 && !failure) {
+      failure = new Error(`unmounting DMG failed${commandFailure(detach)}`);
+    }
+  }
+  await rm(mountDirectory, { recursive: true, force: true });
+
+  if (failure) throw failure;
+  return revision;
+}
+
 const bundleDirectory = resolve(argumentValue("--bundle-dir") ?? "");
 const projectRoot = resolve(argumentValue("--project-root") ?? ".");
 const mode = argumentValue("--mode") ?? "signed";
@@ -170,8 +219,8 @@ console.log(
     + "universal x86_64+arm64"
 );
 
+const diskImage = diskImages[0];
 if (mode === "signed") {
-  const diskImage = diskImages[0];
   try {
     verifyDeveloperIdSignature(application, "application");
     verifyDeveloperIdSignature(diskImage, "DMG");
@@ -179,10 +228,22 @@ if (mode === "signed") {
     verifyStaple(diskImage, "DMG");
     verifyGatekeeper(application, "application", "execute");
     verifyGatekeeper(diskImage, "DMG", "open");
+    const applicationRevision = await verifyDiskImageApplication(diskImage, application);
     const checksum = await sha256(diskImage);
     const checksumPath = `${diskImage}.sha256`;
     await writeFile(checksumPath, `${checksum}  ${basename(diskImage)}\n`);
-    console.log(`Signed release verification OK; checksum written to ${checksumPath}`);
+    console.log(
+      `Signed release verification OK; DMG application ${applicationRevision}, `
+        + `checksum written to ${checksumPath}`
+    );
+  } catch (error) {
+    console.error(`Release artifact verification failed:\n- ${error.message}`);
+    process.exit(1);
+  }
+} else {
+  try {
+    const applicationRevision = await verifyDiskImageApplication(diskImage, application);
+    console.log(`DMG application matches verified bundle: ${applicationRevision}`);
   } catch (error) {
     console.error(`Release artifact verification failed:\n- ${error.message}`);
     process.exit(1);

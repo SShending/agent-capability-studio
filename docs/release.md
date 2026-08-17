@@ -105,7 +105,9 @@ Signed verification fails unless all of the following are true:
 - the executable contains both required architectures;
 - the application and DMG have Developer ID Application signatures and a Team
   Identifier;
-- Apple stapling validation and Gatekeeper assessment accept both artifacts.
+- Apple stapling validation and Gatekeeper assessment accept both artifacts;
+- the DMG mounts read-only, contains exactly one application, and that complete
+  application directory revision matches the loose app that passed the checks.
 
 Only after those checks pass does the verifier write the DMG SHA-256 file.
 Rerunning verification replaces that generated checksum with the value computed
