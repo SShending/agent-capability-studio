@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { chmod, mkdtemp, mkdir, utimes, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, symlink, unlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { directoryRevision } from "../scripts/release-artifact-model.mjs";
@@ -33,4 +33,20 @@ test("application revisions bind complete contents and executable modes but igno
 
   const fourth = await applicationFixture(join(root, "fourth"), "different binary");
   assert.notEqual(await directoryRevision(first), await directoryRevision(fourth));
+});
+
+test("application revisions bind symbolic link targets without following them", async () => {
+  const root = await mkdtemp(join(tmpdir(), "agent-skill-studio-link-revision-"));
+  const first = await applicationFixture(join(root, "first"));
+  const second = await applicationFixture(join(root, "second"));
+  const firstLink = join(first, "Contents", "Resources", "current-icon");
+  const secondLink = join(second, "Contents", "Resources", "current-icon");
+  await symlink("icon.icns", firstLink);
+  await symlink("icon.icns", secondLink);
+
+  assert.equal(await directoryRevision(first), await directoryRevision(second));
+
+  await unlink(secondLink);
+  await symlink("missing-icon.icns", secondLink);
+  assert.notEqual(await directoryRevision(first), await directoryRevision(second));
 });

@@ -136,7 +136,7 @@ Implementation record (2026-08-17):
   runs Tauri signing/notarization/stapling, verifies Developer ID signatures,
   Gatekeeper, and checksums, then uploads a temporary candidate artifact without
   publishing a GitHub Release.
-- Automated evidence on the implementation revision: 61 frontend tests, 164
+- Automated evidence on the implementation revision: 62 frontend tests, 164
   desktop-core tests, 24 Bundle-core tests, production frontend build, locked
   Cargo check, warnings-denied Clippy, YAML parsing, and a successful universal
   unsigned `.app`/`.dmg` build whose metadata verifier reported version 0.1.0,
