@@ -8,6 +8,14 @@ migration. Phase 5 turns that local development application into a public,
 non-programmer-friendly macOS release without weakening its privacy or mutation
 boundaries.
 
+## Current Release Decision
+
+Public v0.1 publication was deferred by the owner on 2026-08-18. The repository
+keeps the unsigned CI and local DMG workflow for development and private testing.
+Developer ID signing, Apple notarization, sanitized publication screenshots,
+clean-machine acceptance, and public artifact publication remain release gates
+and are intentionally not being pursued as the current implementation task.
+
 Task 4.6 remains a release gate: the owner still needs to validate one real
 Mac-to-Linux Bundle migration. Entering Phase 5 does not manufacture that
 missing evidence or mark the migration accepted.

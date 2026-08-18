@@ -2,8 +2,9 @@
 
 ## Current Position
 
-- Active phase: Phase 5 public v0.1 release
-- Current task: 5.2 add CI, release metadata, signing, notarization, and packaging
+- Active phase: release-deferred product validation
+- Current task: 4.6 verify the real Mac-to-Linux migration, then complete
+  sanitized documentation assets and first-user hardening
 - Next task: 5.3 reconcile public documentation, screenshots, and limitations
 - Last accepted milestone: Task 7.5 multi-Skill repository intake and review
   queue, accepted by the owner on 2026-08-16
@@ -15,6 +16,11 @@
   release gate; it has not been marked complete without a real server result
 - Human validation: Task 7.5 passed first-user native-window acceptance on
   2026-08-16; Task 5.1 passed its native-window acceptance on 2026-08-08
+- Release decision: public v0.1 publication was deferred by the owner on
+  2026-08-18. Unsigned builds remain available for local development and
+  private testing; Apple signing, notarization, clean-machine acceptance, and
+  publication remain deferred release gates rather than active implementation
+  work.
 
 ## Phase 1 - Native Desktop Vertical Slice
 
@@ -143,7 +149,12 @@ Tasks:
 - [ ] 4.6 Verify the real Mac-to-Linux migration, including identical skips and
   explicit handling of different same-name server content.
 
-## Phase 5 - Public v0.1 Release
+## Phase 5 - Public v0.1 Release (Deferred)
+
+Status: release preparation was deferred by the owner on 2026-08-18 after the
+unsigned CI, packaging, and public documentation work completed. Signing,
+notarization, screenshots for publication, clean-machine acceptance, and
+publication remain gated until the release is resumed.
 
 Detailed plan: [05-public-v01-release.md](docs/phases/05-public-v01-release.md)
 
