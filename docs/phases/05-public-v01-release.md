@@ -162,8 +162,8 @@ Implementation record (2026-08-17):
 
 ### Task 5.3 - Public Documentation And Repository Readiness
 
-- Status: documentation implementation complete; sanitized screenshots and
-  human walkthrough pending.
+- Status: documentation and sanitized screenshots complete; human walkthrough
+  pending.
 - Outcome: a non-programmer can understand the product boundary, install and use
   the app, understand cloud-data behavior and audit limitations, migrate Skills,
   report a security issue, and inspect the source license.
@@ -191,10 +191,12 @@ Implementation record (2026-08-17):
 - Added `test/public-docs.test.mjs` to verify local Markdown links, MIT/version
   metadata, known credential/path patterns, and the non-Keychain credential
   description. The frontend test suite passes 66 tests.
-- The existing visual-QA screenshots include a local username and absolute
-  Skill paths. They remain ignored and must be redacted or regenerated with
-  neutral fixture data before publication; no private screenshot was added to
-  the repository.
+- On 2026-08-19, the owner supplied current native-window screenshots for the
+  Skill library and complete package editor. The publication copies in
+  `docs/images/` preserve the full-window composition at the original size and
+  are referenced by both README languages. They contain no owner username or
+  personal path; the only visible location is the neutral `/private/tmp` path
+  of the isolated demo Home. The source captures remain outside the repository.
 
 ### Task 5.4 - Clean-Machine Acceptance And Publication
 

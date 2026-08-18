@@ -1,60 +1,89 @@
 # Agent Skill Studio
 
-Agent Skill Studio is a macOS desktop workspace for people who want to
-understand, edit, audit, compare, and migrate Codex Skills without managing
-Skill files by hand.
+A local macOS studio for understanding, editing, reviewing, organizing, and
+moving Codex Skills.
 
-[简体中文说明](README.zh-CN.md)
+[简体中文](README.zh-CN.md)
 
-## What it does
+![Agent Skill Studio Skill library](docs/images/skill-library.png)
 
-- Finds personal, disabled, archived, system, and plugin-managed Codex Skills.
-- Creates and edits a complete Skill package, including `SKILL.md`,
-  `references/`, `scripts/`, `assets/`, and other package files.
-- Shows plain-language evidence for triggers, destructive commands, network
-  access, sensitive-data signals, execution, persistence, dependencies, and
-  encoded content before a mutation.
-- Organizes Skills with Collections, provenance, package validation, and
-  GitHub comparison.
-- Imports a local Skill or a public GitHub repository, lists conventional Skills
-  in a multi-Skill repository, and lets the user choose candidates separately.
-- Exports selected user-controlled Skills as a verified Bundle for a trusted
-  Mac-to-Linux migration. Identical Skills are skipped; different same-name
-  Skills require confirmation before replacement.
-- Disables, restores, archives, and permanently deletes personal Skills only
-  through explicit lifecycle confirmations. System and plugin-managed Skills
-  remain read-only.
+Agent Skills often arrive as folders of Markdown, scripts, references, and
+assets. It can be hard to tell where a Skill came from, what changed, or what
+will happen when you install it. Agent Skill Studio puts that work in one desktop
+app. You can inspect the evidence first, then choose whether to edit, install,
+move, archive, or delete.
+
+The app is built for people who would rather not manage Skill directories by
+hand. It currently focuses on Codex and runs locally on macOS.
+
+## What you can do
+
+### Understand the library on your Mac
+
+Browse personal, disabled, archived, system, and plugin-managed Skills in one
+catalog. Source repositories and Collections help organize the list without
+moving the underlying directories. System and plugin-managed Skills remain
+read-only.
+
+### Work with the complete Skill package
+
+Open `SKILL.md`, `references/`, `scripts/`, `assets/`, and other package files in
+one editor. The Studio validates paths and package structure, shows exact
+changes, and checks that the Skill has not changed elsewhere before saving.
+
+![Complete Skill package editor](docs/images/package-editor.png)
+
+### Review unfamiliar Skills before installation
+
+Paste a public GitHub repository URL or choose a local folder. For repositories
+that contain several conventional Skills, the Studio lists them at one fixed
+commit and lets you review each candidate separately. Acquisition, Audit, and
+Installation Confirmation remain separate actions. Candidate scripts are never
+run during review.
+
+### Compare with the source repository
+
+When a Skill has recorded GitHub provenance, the Studio compares the complete
+local package with the selected remote revision. Added, removed, and modified
+files are attributed to the local copy or the remote source. File synchronization
+requires an explicit choice and never silently overwrites a different package.
+
+### Move trusted Skills to another machine
+
+Export selected personal Skills as a versioned, hash-verified Skill Bundle. A
+trusted Mac export can be transferred to a Linux server and handed directly to
+Codex CLI. Identical Skills are skipped, while different same-name Skills require
+confirmation. The Linux server does not need Agent Skill Studio, Node.js, or
+Rust. See the [server migration guide](docs/server-migration.md).
 
 ## Audit and privacy
 
-Baseline Audit is local and offline. It is a bounded evidence check, not a
-security certificate or a guarantee that a Skill is harmless.
+Baseline Audit runs locally and offline. It reports bounded evidence about
+triggers, destructive commands, network access, sensitive-data signals,
+execution, persistence, dependencies, and encoded content. An empty result is
+not a security certificate or a guarantee that a Skill is harmless.
 
-Deep Audit is optional. Before it runs, the app shows the selected API mode,
-derived endpoint, model, and exact files that will leave the Mac. It supports
-OpenAI-compatible Chat Completions and Responses modes and never silently
-falls back to another protocol. The confirmed files are sent in two requests:
-a threat review and an independent false-positive review. The provider receives
-no tools and the app accepts only evidence that can be checked against the
-submitted files.
+Deep Audit is optional. Before it runs, the app shows the API mode, endpoint,
+model, and exact files that will leave the Mac. It supports OpenAI-compatible
+Chat Completions and Responses APIs and does not fall back to another protocol.
+Connection tests send a fixed synthetic prompt and never read Skill files.
 
-Provider, endpoint, and model preferences are stored separately from the API
-key. The API key is stored in an app-private local file with restrictive
-permissions (`0700` directory and `0600` files on Unix systems), atomic writes,
-and symlink/permission checks. Opening Settings checks only whether a valid key
-exists; it does not read the key or require a password. This is not equivalent
-to Keychain protection against malicious software already running as the same
-macOS account. Keys are never written to Skills, Bundles, project files, logs,
-or audit evidence.
+The API key is stored in an app-private local file, separately from provider
+preferences. On Unix systems, the directory uses `0700` permissions and files use
+`0600`. This prevents ordinary access from other local accounts. It is not equivalent
+to Keychain protection against malicious software already running as the same macOS
+user. The Studio never writes the key to a Skill, Bundle, project
+file, log, or audit finding. Read [PRIVACY.md](PRIVACY.md) and
+[SECURITY.md](SECURITY.md) for the complete boundaries.
 
-## Install and run
+## Current release status
 
-When a signed release is published, download its DMG from GitHub Releases,
-open it, and drag **Agent Skill Studio** to Applications. The public release
-must pass Developer ID signing, notarization, stapling, and clean-machine
-installation checks before it is published.
+Public binary release is deferred. The repository contains reproducible CI,
+universal macOS packaging, and an unsigned local DMG workflow. A public DMG will
+not be published until Developer ID signing, Apple notarization, and clean-machine
+acceptance are complete.
 
-For development or an unsigned local build:
+To run the app from source or create an unsigned local build:
 
 ```bash
 npm ci
@@ -62,41 +91,21 @@ npm run desktop:dev
 npm run desktop:build
 ```
 
-The shipped app does not start a Node HTTP server and does not require Node.js
-or Rust on the user's machine. Node.js and Rust are development dependencies;
-the repository pins Node `22.23.1` and Rust `1.88.0` for reproducible builds.
-
-## Trusted migration
-
-For a Skill Bundle exported by the owner from this Mac:
-
-1. Export the selected Skills in the Studio.
-2. Transfer the `.skillbundle` with a trusted method such as SFTP or the
-   server provider's file-transfer UI.
-3. Open Codex in the directory containing the Bundle and paste the installation
-   instruction from the export receipt.
-4. Confirm only different same-name Skills that should replace the server copy.
-
-This self-migration does not repeat semantic audit, but it still verifies the
-Bundle, prevents traversal, avoids duplicate identical Skills, and never
-silently overwrites different content. See
-[`docs/server-migration.md`](docs/server-migration.md).
+The packaged app does not start a Node HTTP server and does not require Node.js
+or Rust on the user's machine. Development uses the versions pinned in the
+repository: Node `22.23.1` and Rust `1.88.0`.
 
 ## Product boundary
 
-The Studio is Codex-first and Skill-first. It does not replace CC Switch's
-cross-Agent distribution and synchronization, MCP Inspector's protocol
-debugging, or maintained Skill/MCP security scanners. Additional Agent
-adapters and capability types require a separate compatibility contract and
-validation before they are added.
+Agent Skill Studio does not replace CC Switch for cross-Agent distribution,
+MCP Inspector for protocol debugging, or maintained security scanners. Codex is
+the first Agent adapter. New adapters and capability types require their own
+compatibility contract and validation.
 
-## Contributing and security
-
-Read [`AGENTS.md`](AGENTS.md), [`INIT.md`](INIT.md), [`CONTEXT.md`](CONTEXT.md),
-and [`PLAN.md`](PLAN.md) for project constraints and roadmap. Please report
-security issues privately according to [`SECURITY.md`](SECURITY.md), rather
-than opening a public issue with exploit details.
+The product brief, domain language, decisions, and roadmap are in
+[INIT.md](INIT.md), [CONTEXT.md](CONTEXT.md), [AGENTS.md](AGENTS.md), and
+[PLAN.md](PLAN.md).
 
 ## License
 
-MIT. See [`LICENSE`](LICENSE).
+MIT. See [LICENSE](LICENSE).

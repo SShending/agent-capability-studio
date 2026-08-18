@@ -1,49 +1,76 @@
 # Agent Skill Studio
 
-Agent Skill Studio 是一个 macOS 桌面工作台，面向不想手动管理 Skill
-文件的用户，用于理解、编辑、审查、比较和迁移 Codex Skill。
+一个在 macOS 本机理解、编辑、审查、整理和迁移 Codex 技能的桌面工作台。
 
-[English README](README.md)
+[English](README.md)
 
-## 功能
+![Agent Skill Studio 技能库](docs/images/skill-library.png)
 
-- 发现个人、停用、归档、系统和插件管理的 Codex Skill。
-- 编辑完整 Skill 包，包括 `SKILL.md`、`references/`、`scripts/`、
-  `assets/` 和其他包文件。
-- 在保存、安装或生命周期操作前，以易懂的方式展示触发条件、破坏性命令、
-  网络访问、敏感数据、执行、持久化、依赖和编码内容等证据。
-- 使用 Collections、来源信息、包校验和 GitHub 比较整理 Skill。
-- 导入本地 Skill 或公开 GitHub 仓库；对于包含多个 Skill 的仓库，列出候选
-  并允许分别选择。
-- 将选定的个人 Skill 导出为经过校验的 Bundle，用于可信的 Mac 到 Linux
-  迁移。内容完全相同的 Skill 会跳过，不同的同名 Skill 必须确认后才替换。
-- 通过明确确认停用、恢复、归档和永久删除个人 Skill。系统和插件管理的
-  Skill 始终只读。
+一个技能往往不只有一份 Markdown，还可能包含脚本、参考资料和资源文件。仅靠
+文件夹很难看清它来自哪里、哪些内容发生了变化，以及安装后会影响什么。
+Agent Skill Studio 把这些信息放进一个桌面应用：先查看证据，再决定是否编辑、
+安装、移动、归档或删除。
+
+它面向不想手动管理技能目录的用户。目前以 Codex 为首个适配目标，仅运行在
+macOS 本机。
+
+## 你可以用它做什么
+
+### 看清本机技能
+
+在一个目录中浏览个人、停用、归档、系统和插件管理的技能。来源仓库和分组能
+帮助整理列表，但不会移动原始目录。系统和插件管理的技能始终只读。
+
+### 编辑完整技能包
+
+在同一编辑器中处理 `SKILL.md`、`references/`、`scripts/`、`assets/` 和其他
+文件。保存前会检查路径和包结构、展示准确差异，并确认技能没有在其他地方被
+修改。
+
+![完整技能包编辑器](docs/images/package-editor.png)
+
+### 安装前先审查陌生技能
+
+粘贴公开 GitHub 仓库地址，或者选择本机目录。对于包含多个常规技能的仓库，
+应用会固定到一个明确提交，列出其中的技能，并让你逐个审查。获取、审查和安装
+确认是三个独立动作，审查过程中不会运行候选技能里的脚本。
+
+### 与来源仓库比较
+
+如果技能记录了 GitHub 来源，应用会比较完整的本机技能包和指定的远端版本。
+新增、删除和修改会区分来自本机还是远端。同步文件必须由用户明确选择，不会
+静默覆盖不同的技能包。
+
+### 将可信技能迁移到服务器
+
+把选中的个人技能导出为带版本和哈希校验的技能迁移包。由本机导出的可信迁移包
+可以传到 Linux 服务器，直接交给 Codex CLI。完全相同的技能会跳过，不同的同名
+技能需要确认。服务器不需要安装 Agent Skill Studio、Node.js 或 Rust。详见
+[服务器迁移说明](docs/server-migration.md)。
 
 ## 审查与隐私
 
-基础审查只在本机离线执行。它是有边界的证据检查，不是安全证书，也不保证
-Skill 没有风险。
+基础审查只在本机离线执行。它会展示触发条件、破坏性命令、网络访问、敏感数据、
+执行、持久化、依赖和编码内容等有限证据。没有发现问题不等于安全证书，也不保证
+技能没有风险。
 
-深度审查是可选功能。开始前，应用会显示 API 模式、实际请求地址、模型以及
-将离开本机的确切文件。支持 OpenAI 兼容的 Chat Completions 和 Responses
-模式，不会静默切换协议。确认的文件会发送两次：一次进行威胁审查，一次由
-独立步骤复核误报。提供商不会获得工具权限，应用只接受能够在提交文件中核对
-的证据。
+深度审查是可选功能。开始前，应用会显示 API 模式、请求地址、模型以及将离开
+本机的确切文件。它支持 OpenAI 兼容的 Chat Completions 和 Responses 接口，
+不会静默切换协议。连接测试只发送固定的合成提示，不会读取技能文件。
 
-提供商、地址和模型配置与 API 密钥分开保存。API 密钥保存在应用私有的本地
-文件中；Unix 系统会使用受限权限（目录 `0700`、文件 `0600`），并进行原子写入、
-符号链接和权限检查。打开设置只检查是否存在有效密钥，不读取密钥，也不要求
-输入密码。这种方式不能防御已经以同一 macOS 账户运行的恶意软件，因此不应
-理解为等同于 Keychain。密钥不会写入 Skill、Bundle、项目文件、日志或审查证据。
+API 密钥与提供商配置分开保存在应用私有的本地文件中。Unix 系统上的目录权限为
+`0700`，文件权限为 `0600`。这能阻止其他普通本机账户读取，但不能防御已经以同一
+macOS 用户运行的恶意软件，因此不等同于 Keychain。应用不会把密钥写入技能、
+迁移包、项目文件、日志或审查结果。完整说明见 [PRIVACY.md](PRIVACY.md) 和
+[SECURITY.md](SECURITY.md)。
 
-## 安装与运行
+## 当前发布状态
 
-正式签名版本发布后，可从 GitHub Releases 下载 DMG，打开后将
-**Agent Skill Studio** 拖入“应用程序”。正式发布前必须通过 Developer ID
-签名、公证、票据固定和干净机器安装检查。
+公开安装包暂缓发布。仓库已经具备可重复的持续集成、通用 macOS 打包和本地未签名
+DMG 流程。Developer ID 签名、Apple 公证和干净机器验收完成前，不会发布公开
+DMG。
 
-开发或本地未签名构建需要：
+从源码运行或构建本地未签名版本：
 
 ```bash
 npm ci
@@ -51,35 +78,18 @@ npm run desktop:dev
 npm run desktop:build
 ```
 
-用户安装的应用不会启动 Node HTTP 服务，也不要求用户安装 Node.js 或 Rust。
-Node.js 和 Rust 只用于开发；仓库固定 Node `22.23.1` 和 Rust `1.88.0` 以便
-可重复构建。
-
-## 可信迁移
-
-对于由本机所有者导出的 Skill Bundle：
-
-1. 在 Studio 中导出要迁移的 Skill。
-2. 使用 SFTP 或服务器提供商的文件传输界面等可信方式传输 `.skillbundle`。
-3. 在包含 Bundle 的目录中打开 Codex，粘贴导出回执里的安装指令。
-4. 只确认确实要替换服务器版本的不同同名 Skill。
-
-这种自迁移不重复进行语义审查，但仍会校验 Bundle、防止路径穿越、跳过重复的
-相同 Skill，并且不会静默覆盖不同内容。详见
-[`docs/server-migration.md`](docs/server-migration.md)。
+打包后的应用不会启动 Node HTTP 服务，用户也不需要安装 Node.js 或 Rust。开发
+环境使用仓库固定的 Node `22.23.1` 和 Rust `1.88.0`。
 
 ## 产品边界
 
-Studio 当前以 Codex 和 Skill 为核心。它不替代 CC Switch 的跨 Agent 分发与
-同步、MCP Inspector 的协议调试，也不替代维护中的 Skill/MCP 安全扫描器。
-新增 Agent 适配器或能力类型前，需要单独的兼容性契约和验证。
+Agent Skill Studio 不替代 CC Switch 的跨 Agent 分发、MCP Inspector 的协议调试，
+也不替代持续维护的安全扫描器。Codex 是第一个 Agent 适配器。增加其他适配器或
+能力类型前，需要单独定义兼容性契约并完成验证。
 
-## 参与和安全问题
-
-项目约束和路线图见 [`AGENTS.md`](AGENTS.md)、[`INIT.md`](INIT.md)、
-[`CONTEXT.md`](CONTEXT.md) 和 [`PLAN.md`](PLAN.md)。安全问题请按照
-[`SECURITY.md`](SECURITY.md) 私下报告，不要在公开 Issue 中发布漏洞细节。
+产品定位、领域术语、关键决策和路线图见 [INIT.md](INIT.md)、
+[CONTEXT.md](CONTEXT.md)、[AGENTS.md](AGENTS.md) 和 [PLAN.md](PLAN.md)。
 
 ## 许可证
 
-MIT，详见 [`LICENSE`](LICENSE)。
+MIT，详见 [LICENSE](LICENSE)。

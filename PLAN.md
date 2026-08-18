@@ -3,9 +3,9 @@
 ## Current Position
 
 - Active phase: release-deferred product validation
-- Current task: 4.6 verify the real Mac-to-Linux migration, then complete
-  sanitized documentation assets and first-user hardening
-- Next task: 5.3 reconcile public documentation, screenshots, and limitations
+- Current task: 5.3 complete the non-programmer documentation walkthrough;
+  Task 4.6 real Mac-to-Linux verification remains a deferred release gate
+- Next task: resume Tasks 4.6, 5.2, and 5.4 only when public release work resumes
 - Last accepted milestone: Task 7.5 multi-Skill repository intake and review
   queue, accepted by the owner on 2026-08-16
 - Blocking decision: none; the owner simplified server migration on 2026-08-06
@@ -153,8 +153,8 @@ Tasks:
 
 Status: release preparation was deferred by the owner on 2026-08-18 after the
 unsigned CI, packaging, and public documentation work completed. Signing,
-notarization, screenshots for publication, clean-machine acceptance, and
-publication remain gated until the release is resumed.
+notarization, clean-machine acceptance, and publication remain gated until the
+release is resumed. Sanitized publication screenshots were added on 2026-08-19.
 
 Detailed plan: [05-public-v01-release.md](docs/phases/05-public-v01-release.md)
 
@@ -189,9 +189,11 @@ Tasks:
   Documentation implementation completed on 2026-08-17: refreshed the English
   README, added a complete Simplified Chinese README, SECURITY.md, and PRIVACY.md,
   and added public-document link, metadata, secret/path, and credential-storage
-  regression tests. Existing screenshots contain the owner's local username and
-  absolute paths, so sanitized screenshots and the non-programmer walkthrough
-  remain acceptance work; they must be completed before publication.
+  regression tests. Sanitized Skill-library and complete-package-editor
+  screenshots were added on 2026-08-19 without the owner's local username or
+  personal paths. They show only the neutral absolute path of an isolated
+  `/private/tmp` demo Home. The non-programmer walkthrough remains acceptance
+  work before publication.
 - [ ] 5.4 Run clean-machine acceptance and publish the v0.1 artifacts.
 
 ## Phase 6 - Skill Package Workspace And Collections
